@@ -5,26 +5,29 @@ import UIKit
 struct HomeView: View {
     @ObservedObject var session: TranslationSessionController
     @State private var photoItem: PhotosPickerItem?
+    @State private var showRegionEditor = false
 
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header
-                    languageRow
+                VStack(alignment: .leading, spacing: 16) {
+                    languageCard
+                    sceneCard
+                    areaCard
                     startCard
                     resultCard
-                    howTo
                 }
                 .padding()
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("屏译")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink(destination: SettingsView(session: session)) {
                         Image(systemName: "gearshape")
                     }
+                    .accessibilityLabel("设置")
                 }
             }
             .background(
@@ -38,35 +41,165 @@ struct HomeView: View {
                 guard let newValue else { return }
                 Task { await loadPhoto(newValue) }
             }
+            .sheet(isPresented: $showRegionEditor) {
+                RegionEditorView(region: $session.settings.customRegion)
+            }
         }
         .navigationViewStyle(.stack)
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("实时屏幕翻译")
-                .font(.title2.bold())
-            Text("先选语言和翻译源，再开始直播。列表里选「屏译」。字幕走画中画小窗，切到别的 App 也能看。")
-                .font(.subheadline)
+    private var languageCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("语言")
+                .font(.headline)
+            HStack(spacing: 12) {
+                languageMenu(
+                    title: "原文",
+                    selection: $session.settings.sourceLanguage,
+                    options: LanguageOption.sources
+                )
+                Image(systemName: "arrow.right")
+                    .foregroundStyle(.secondary)
+                languageMenu(
+                    title: "译文",
+                    selection: $session.settings.targetLanguage,
+                    options: LanguageOption.targets
+                )
+            }
+            Text("不同翻译服务支持的语言可能不一样")
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .card()
     }
 
-    private var languageRow: some View {
-        HStack(spacing: 12) {
-            languageMenu(
-                title: "原文",
-                selection: $session.settings.sourceLanguage,
-                options: LanguageOption.sources
-            )
-            Image(systemName: "arrow.right")
+    private var sceneCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("翻译模式")
+                .font(.headline)
+            Picker("翻译模式", selection: $session.settings.translateScene) {
+                ForEach(TranslateScene.allCases) { scene in
+                    Text(scene.title).tag(scene)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text(session.settings.translateScene.subtitle)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
-            languageMenu(
-                title: "译文",
-                selection: $session.settings.targetLanguage,
-                options: LanguageOption.targets
-            )
         }
+        .card()
+    }
+
+    private var areaCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("翻译区域")
+                    .font(.headline)
+                Spacer()
+                Button("编辑") { showRegionEditor = true }
+                    .disabled(session.settings.recognitionMode != .custom)
+            }
+            Picker("翻译区域", selection: $session.settings.recognitionMode) {
+                ForEach(RecognitionMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text(session.settings.recognitionMode.subtitle)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if session.settings.recognitionMode == .smart {
+                Text("智能模式会自动识别游戏对话或视频字幕。区域不对再改成自定义。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .card()
+    }
+
+    private var startCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(session.isBroadcasting ? Color.green : (session.isRunning ? Color.orange : Color.gray))
+                    .frame(width: 10, height: 10)
+                Text(session.statusLine)
+                    .font(.subheadline)
+                Spacer()
+                if let ms = session.lastLatencyMS {
+                    Text("\(ms)ms")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if session.isRunning {
+                Button(role: .destructive) {
+                    session.stop()
+                } label: {
+                    Text("停止")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button {
+                    session.start()
+                } label: {
+                    Text("开始")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if session.settings.translateScene != .reading {
+                BroadcastStartButton(title: session.isBroadcasting ? "直播中" : "开始直播")
+            } else {
+                Text("阅读模式不用开直播。复制一段文字就会翻译。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                Label("用相册图片试一次", systemImage: "photo")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            if !session.settings.translatorIsConfigured() {
+                Text("需要先设置 API Key")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .card()
+    }
+
+    private var resultCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("最近一次结果").font(.headline)
+            if let error = session.lastError, !error.isEmpty {
+                Text(error).foregroundStyle(.orange).font(.footnote)
+            }
+            if session.settings.showSourceText, !session.lastSource.isEmpty {
+                Text("原文").font(.caption).foregroundStyle(.secondary)
+                Text(session.lastSource).textSelection(.enabled)
+            }
+            if !session.lastTranslated.isEmpty {
+                Text("译文").font(.caption).foregroundStyle(.secondary)
+                Text(session.lastTranslated)
+                    .font(.title3.weight(.semibold))
+                    .textSelection(.enabled)
+            }
+            if session.lastSource.isEmpty && session.lastTranslated.isEmpty {
+                Text("还没有识别结果。").foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
     }
 
     private func languageMenu(
@@ -86,118 +219,8 @@ struct HomeView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
-            .background(Color(.secondarySystemGroupedBackground))
+            .background(Color(.tertiarySystemFill))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-    }
-
-    private var startCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                statusDot
-                Text(session.statusLine)
-                    .font(.subheadline)
-                Spacer()
-            }
-            if session.isRunning {
-                Button(role: .destructive) {
-                    session.stop()
-                } label: {
-                    Label("停止翻译", systemImage: "stop.fill")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.bordered)
-            } else {
-                Button {
-                    session.start()
-                } label: {
-                    Label("开始翻译会话", systemImage: "play.fill")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            BroadcastStartButton(title: session.isBroadcasting ? "直播中 · 再点可停止" : "开始屏幕直播")
-            PhotosPicker(selection: $photoItem, matching: .images) {
-                Label("用相册图片试一次", systemImage: "photo")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            if !session.settings.translatorIsConfigured() {
-                Text("当前翻译源还没填密钥。打开右上角设置。")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
-            Text(AppGroupStore.shared.usingAppGroup ? "共享通道：App Group" : "共享通道：本机目录")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private var statusDot: some View {
-        Circle()
-            .fill(session.isBroadcasting ? Color.green : (session.isRunning ? Color.orange : Color.gray))
-            .frame(width: 10, height: 10)
-    }
-
-    private var resultCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("最近一次结果").font(.headline)
-            if let error = session.lastError, !error.isEmpty {
-                Text(error).foregroundStyle(.orange).font(.footnote)
-            }
-            if !session.lastSource.isEmpty {
-                Text("原文").font(.caption).foregroundStyle(.secondary)
-                Text(session.lastSource).textSelection(.enabled)
-            }
-            if !session.lastTranslated.isEmpty {
-                Text("译文").font(.caption).foregroundStyle(.secondary)
-                Text(session.lastTranslated)
-                    .font(.title3.weight(.semibold))
-                    .textSelection(.enabled)
-            }
-            if session.lastSource.isEmpty && session.lastTranslated.isEmpty {
-                Text("还没有识别结果。").foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private var howTo: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("怎么用").font(.headline)
-            labeled("1", "在设置里选 OCR 和翻译源，自定义 AI 填自己的 Key。")
-            labeled("2", "点「开始翻译会话」，再点「开始屏幕直播」。")
-            labeled("3", "系统列表里选「屏译」，等倒计时结束。")
-            labeled("4", "切到游戏、漫画或视频。画中画小窗会出译文。")
-            labeled("5", "识别范围可在设置里改成智能、自定义框或全屏。")
-            Text("若列表里没有「屏译」，这是巨魔/系统没登记扩展，不是翻译逻辑坏了。那时仍可用相册试 OCR，或以后再接自己抓屏。")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-        }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private func labeled(_ index: String, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(index)
-                .font(.caption.bold())
-                .frame(width: 22, height: 22)
-                .background(Color.accentColor.opacity(0.15))
-                .clipShape(Circle())
-            Text(text).font(.subheadline)
         }
     }
 
@@ -213,5 +236,15 @@ struct HomeView: View {
         } catch {
             session.lastError = error.localizedDescription
         }
+    }
+}
+
+private extension View {
+    func card() -> some View {
+        self
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }

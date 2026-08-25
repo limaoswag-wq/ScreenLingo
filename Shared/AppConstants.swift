@@ -13,7 +13,7 @@ enum AppConstants {
     static let broadcastStateFileName = "broadcast.json"
 
     /// Broadcast extension send interval. OCR is more expensive than capture.
-    static let captureMinInterval: TimeInterval = 0.55
-    static let jpegQuality: CGFloat = 0.55
-    static let maxFrameWidth: CGFloat = 1280
+    static let captureMinInterval: TimeInterval = 0.45
+    static let jpegQuality: CGFloat = 0.5
+    static let maxFrameWidth: CGFloat = 960
 }

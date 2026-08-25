@@ -10,17 +10,44 @@ enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .smart: return "智能区域"
-        case .custom: return "自定义区域"
+        case .smart: return "智能"
+        case .custom: return "自定义"
         case .full: return "全屏"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .smart: return "自动找字幕带或对话较密的一条横带"
+        case .smart: return "自动对准游戏对话或视频字幕带"
         case .custom: return "只识别你圈出来的那一块"
-        case .full: return "整帧送去 OCR，最慢也最全"
+        case .full: return "整帧送去 OCR，最全也最慢"
+        }
+    }
+}
+
+enum TranslateScene: String, Codable, CaseIterable, Identifiable {
+    case game
+    case manga
+    case video
+    case reading
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .game: return "游戏"
+        case .manga: return "漫画"
+        case .video: return "视频"
+        case .reading: return "阅读"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .game: return "适合游戏对话和选项"
+        case .manga: return "适合靠近屏幕中部的气泡"
+        case .video: return "适合字幕，横屏底部 / 竖屏顶部"
+        case .reading: return "复制文本就会翻译，不用开直播"
         }
     }
 }
@@ -33,8 +60,8 @@ enum OCREngineKind: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .visionAccurate: return "Apple Vision · 精确"
-        case .visionFast: return "Apple Vision · 快速"
+        case .visionAccurate: return "高精度"
+        case .visionFast: return "快速"
         }
     }
 }
@@ -54,12 +81,89 @@ enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
         case .google: return "Google Translate"
         case .baidu: return "百度翻译"
         case .deepl: return "DeepL"
-        case .openai: return "自定义 AI（OpenAI 兼容）"
+        case .openai: return "自定义 AI"
+        }
+    }
+}
+
+enum OpenAIAPIMode: String, Codable, CaseIterable, Identifiable {
+    case chat
+    case responses
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .chat: return "Chat Completions"
+        case .responses: return "Responses"
         }
     }
 
-    var needsNetwork: Bool {
-        self != .apple
+    var subtitle: String {
+        switch self {
+        case .chat: return "POST /v1/chat/completions，兼容大多数中转"
+        case .responses: return "POST /v1/responses，OpenAI 新接口"
+        }
+    }
+}
+
+enum CaptionFontSize: String, Codable, CaseIterable, Identifiable {
+    case small
+    case medium
+    case large
+    case extraLarge
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .small: return "小"
+        case .medium: return "中"
+        case .large: return "大"
+        case .extraLarge: return "特大"
+        }
+    }
+
+    var sourcePoints: CGFloat {
+        switch self {
+        case .small: return 16
+        case .medium: return 20
+        case .large: return 24
+        case .extraLarge: return 28
+        }
+    }
+
+    var translatedPoints: CGFloat {
+        switch self {
+        case .small: return 22
+        case .medium: return 28
+        case .large: return 34
+        case .extraLarge: return 42
+        }
+    }
+}
+
+enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
+    case small
+    case medium
+    case large
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .small: return "小"
+        case .medium: return "中"
+        case .large: return "大"
+        }
+    }
+
+    var canvas: CGSize {
+        switch self {
+        case .small: return CGSize(width: 640, height: 168)
+        case .medium: return CGSize(width: 720, height: 220)
+        case .large: return CGSize(width: 900, height: 280)
+        }
     }
 }
 
@@ -67,7 +171,7 @@ struct LanguageOption: Identifiable, Hashable {
     let id: String
     let title: String
 
-    static let auto = LanguageOption(id: "auto", title: "自动检测")
+    static let auto = LanguageOption(id: "auto", title: "自动")
     static let zhHans = LanguageOption(id: "zh-Hans", title: "简体中文")
     static let zhHant = LanguageOption(id: "zh-Hant", title: "繁体中文")
     static let en = LanguageOption(id: "en", title: "English")

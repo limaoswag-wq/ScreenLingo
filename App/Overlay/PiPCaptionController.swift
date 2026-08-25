@@ -9,6 +9,10 @@ final class PiPCaptionController: NSObject {
     let hostView = PiPHostUIView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
     private let displayLayer = AVSampleBufferDisplayLayer()
     private var pip: AVPictureInPictureController?
+    var fontSize: CaptionFontSize = .medium
+    var windowSize: CaptionWindowSize = .medium {
+        didSet { canvasSize = windowSize.canvas }
+    }
     private var canvasSize = CGSize(width: 720, height: 220)
     private var lastSource = ""
     private var lastTranslated = "屏译已就绪"
@@ -78,26 +82,16 @@ final class PiPCaptionController: NSObject {
 
             let inset = rect.insetBy(dx: 28, dy: 22)
             var y = inset.minY
-            let title = NSAttributedString(
-                string: "屏译",
-                attributes: [
-                    .font: UIFont.systemFont(ofSize: 18, weight: .semibold),
-                    .foregroundColor: UIColor(white: 0.7, alpha: 1)
-                ]
-            )
-            title.draw(at: CGPoint(x: inset.minX, y: y))
-            y += 28
-
             if let lastError, !lastError.isEmpty {
-                drawText(lastError, font: .systemFont(ofSize: 22, weight: .medium), color: .systemOrange, in: inset, y: &y)
+                drawText(lastError, font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium), color: .systemOrange, in: inset, y: &y)
             } else {
                 if !lastSource.isEmpty {
-                    drawText(lastSource, font: .systemFont(ofSize: 20, weight: .regular), color: UIColor(white: 0.72, alpha: 1), in: inset, y: &y)
+                    drawText(lastSource, font: .systemFont(ofSize: fontSize.sourcePoints, weight: .regular), color: UIColor(white: 0.72, alpha: 1), in: inset, y: &y)
                     y += 8
                 }
                 drawText(
                     lastTranslated.isEmpty ? "…" : lastTranslated,
-                    font: .systemFont(ofSize: 28, weight: .semibold),
+                    font: .systemFont(ofSize: fontSize.translatedPoints, weight: .semibold),
                     color: .white,
                     in: inset,
                     y: &y

@@ -10,8 +10,8 @@ struct OCREngine {
         let cropped = crop(image, settings: settings)
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = settings.ocrEngine == .visionFast ? .fast : .accurate
-        request.usesLanguageCorrection = settings.ocrEngine == .visionAccurate
-        request.minimumTextHeight = settings.ocrEngine == .visionFast ? 0.03 : 0.015
+        request.usesLanguageCorrection = false
+        request.minimumTextHeight = settings.ocrEngine == .visionFast ? 0.028 : 0.018
         request.recognitionLanguages = preferredLanguages(source: settings.sourceLanguage)
 
         let handler = VNImageRequestHandler(cgImage: cropped, options: [:])
@@ -25,15 +25,39 @@ struct OCREngine {
             guard let candidate = observation.topCandidates(1).first else { return nil }
             let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
             guard text.count >= 1 else { return nil }
-            let boxInCrop = observation.boundingBox
-            let mapped = mapBox(boxInCrop, cropRect: cropRect, fullSize: fullSize)
+            let mapped = mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize)
             return TextBox(text: text, boundingBox: mapped)
         }
-        .sorted { $0.boundingBox.origin.y > $1.boundingBox.origin.y }
+        .sorted { lhs, rhs in
+            if abs(lhs.boundingBox.origin.y - rhs.boundingBox.origin.y) > 0.02 {
+                return lhs.boundingBox.origin.y > rhs.boundingBox.origin.y
+            }
+            return lhs.boundingBox.origin.x < rhs.boundingBox.origin.x
+        }
     }
 
-    func joinedText(from boxes: [TextBox]) -> String {
-        boxes.map(\.text).joined(separator: "\n")
+    func joinedText(from boxes: [TextBox], settings: AppSettings) -> String {
+        let limited = Array(boxes.prefix(settings.translateScene == .manga ? 8 : 12))
+        let joined = limited.map(\.text).joined(separator: "\n")
+        return compactForTranslation(joined)
+    }
+
+    func compactForTranslation(_ text: String) -> String {
+        let lines = text
+            .replacingOccurrences(of: "\r", with: "")
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        var unique: [String] = []
+        var seen = Set<String>()
+        for line in lines {
+            if seen.insert(line).inserted {
+                unique.append(line)
+            }
+        }
+        let joined = unique.joined(separator: "\n")
+        if joined.count <= 420 { return joined }
+        return String(joined.prefix(420))
     }
 
     private func preferredLanguages(source: String) -> [String] {
@@ -67,17 +91,28 @@ struct OCREngine {
         case .custom:
             return settings.customRegion.pixelRect(in: size)
         case .smart:
-            return smartBand(in: size)
+            return smartBand(in: size, scene: settings.translateScene)
         }
     }
 
-    /// Horizontal subtitle/dialogue band: lower third on landscape-ish frames, otherwise a mid-lower strip.
-    private func smartBand(in size: CGSize) -> CGRect {
+    private func smartBand(in size: CGSize, scene: TranslateScene) -> CGRect {
         let landscape = size.width > size.height
-        if landscape {
-            return OCRRegion(x: 0.08, y: 0.72, width: 0.84, height: 0.22).pixelRect(in: size)
+        switch scene {
+        case .video:
+            if landscape {
+                return OCRRegion(x: 0.08, y: 0.74, width: 0.84, height: 0.20).pixelRect(in: size)
+            }
+            return OCRRegion(x: 0.06, y: 0.08, width: 0.88, height: 0.18).pixelRect(in: size)
+        case .game:
+            if landscape {
+                return OCRRegion(x: 0.10, y: 0.62, width: 0.80, height: 0.30).pixelRect(in: size)
+            }
+            return OCRRegion(x: 0.06, y: 0.58, width: 0.88, height: 0.32).pixelRect(in: size)
+        case .manga:
+            return OCRRegion(x: 0.18, y: 0.28, width: 0.64, height: 0.44).pixelRect(in: size)
+        case .reading:
+            return OCRRegion(x: 0.08, y: 0.18, width: 0.84, height: 0.64).pixelRect(in: size)
         }
-        return OCRRegion(x: 0.06, y: 0.62, width: 0.88, height: 0.28).pixelRect(in: size)
     }
 
     /// Vision boxes are bottom-left. `cropRect` is top-left in image pixels.

@@ -11,14 +11,16 @@ enum TranslatorError: LocalizedError {
     case http(Int, String)
     case decode
     case appleUnavailable
+    case models(String)
 
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "当前翻译源还没填好密钥或地址"
         case .empty: return "没有可翻译的文本"
-        case .http(let code, let body): return "翻译接口失败（\(code)）\(body.isEmpty ? "" : "：\(body.prefix(120))")"
+        case .http(let code, let body): return "翻译接口失败（\(code)）\(body.isEmpty ? "" : "：\(body.prefix(160))")"
         case .decode: return "翻译结果解析失败"
         case .appleUnavailable: return "Apple 翻译需要更新的系统语言包接口，当前请改用自定义 AI / DeepL / Google / 百度"
+        case .models(let message): return message
         }
     }
 }
@@ -40,8 +42,8 @@ final class TranslationCache {
     private let lock = NSLock()
     private let limit = 400
 
-    func key(engine: TranslatorKind, source: String, target: String, text: String) -> String {
-        "\(engine.rawValue)|\(source)|\(target)|\(text)"
+    func key(engine: TranslatorKind, source: String, target: String, text: String, model: String, mode: String) -> String {
+        "\(engine.rawValue)|\(mode)|\(model)|\(source)|\(target)|\(text)"
     }
 
     func get(_ key: String) -> String? {
@@ -187,24 +189,61 @@ struct DeepLTranslator: Translator {
 struct OpenAITranslator: Translator {
     func translate(_ text: String, settings: AppSettings) async throws -> String {
         let key = settings.openaiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        var base = settings.openaiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while base.hasSuffix("/") { base.removeLast() }
-        guard !key.isEmpty, !base.isEmpty else { throw TranslatorError.notConfigured }
-        let url = URL(string: base + "/chat/completions")!
+        let base = OpenAIEndpoint.normalizedBase(settings.openaiBaseURL)
+        let model = settings.openaiModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, !base.isEmpty, !model.isEmpty else { throw TranslatorError.notConfigured }
+
+        let target = LanguageOption.targets.first(where: { $0.id == settings.targetLanguage })?.title
+            ?? settings.targetLanguage
+        let prompt = settings.openaiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? AppSettings.defaultPrompt
+            : settings.openaiPrompt
+        let user = "目标语言：\(target)\n\n\(text)"
+        let maxTokens = min(max(settings.openaiMaxTokens, 64), 1024)
+
+        switch settings.openaiAPIMode {
+        case .chat:
+            return try await chatCompletions(
+                base: base,
+                key: key,
+                model: model,
+                prompt: prompt,
+                user: user,
+                maxTokens: maxTokens
+            )
+        case .responses:
+            return try await responses(
+                base: base,
+                key: key,
+                model: model,
+                prompt: prompt,
+                user: user,
+                maxTokens: maxTokens
+            )
+        }
+    }
+
+    private func chatCompletions(
+        base: String,
+        key: String,
+        model: String,
+        prompt: String,
+        user: String,
+        maxTokens: Int
+    ) async throws -> String {
+        let url = OpenAIEndpoint.url(base: base, path: "/chat/completions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
-        let target = LanguageOption.targets.first(where: { $0.id == settings.targetLanguage })?.title
-            ?? settings.targetLanguage
-        let prompt = settings.openaiPrompt.isEmpty ? AppSettings.defaultPrompt : settings.openaiPrompt
+        request.timeoutInterval = 18
         let payload: [String: Any] = [
-            "model": settings.openaiModel,
-            "temperature": 0.2,
+            "model": model,
+            "temperature": 0,
+            "max_tokens": maxTokens,
             "messages": [
                 ["role": "system", "content": prompt],
-                ["role": "user", "content": "目标语言：\(target)\n\n原文：\n\(text)"]
+                ["role": "user", "content": user]
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
@@ -213,11 +252,145 @@ struct OpenAITranslator: Translator {
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let choices = json?["choices"] as? [[String: Any]]
         let message = choices?.first?["message"] as? [String: Any]
-        if let content = message?["content"] as? String {
-            return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let content = flattenContent(message?["content"]) {
+            return content
+        }
+        if let text = choices?.first?["text"] as? String {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         throw TranslatorError.decode
     }
+
+    private func responses(
+        base: String,
+        key: String,
+        model: String,
+        prompt: String,
+        user: String,
+        maxTokens: Int
+    ) async throws -> String {
+        let url = OpenAIEndpoint.url(base: base, path: "/responses")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 18
+        let payload: [String: Any] = [
+            "model": model,
+            "temperature": 0,
+            "max_output_tokens": maxTokens,
+            "instructions": prompt,
+            "input": user
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try throwIfNeeded(response, data)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if let outputText = json?["output_text"] as? String, !outputText.isEmpty {
+            return outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let output = json?["output"] as? [[String: Any]] {
+            var parts: [String] = []
+            for item in output {
+                if let content = item["content"] as? [[String: Any]] {
+                    for block in content {
+                        if let text = block["text"] as? String {
+                            parts.append(text)
+                        } else if let text = (block["text"] as? [String: Any])?["value"] as? String {
+                            parts.append(text)
+                        }
+                    }
+                }
+            }
+            let joined = parts.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { return joined }
+        }
+        throw TranslatorError.decode
+    }
+}
+
+enum OpenAIEndpoint {
+    static func normalizedBase(_ raw: String) -> String {
+        var base = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while base.hasSuffix("/") { base.removeLast() }
+        if base.hasSuffix("/chat/completions") {
+            base = String(base.dropLast("/chat/completions".count))
+        } else if base.hasSuffix("/responses") {
+            base = String(base.dropLast("/responses".count))
+        }
+        return base
+    }
+
+    static func url(base: String, path: String) -> URL {
+        URL(string: normalizedBase(base) + path)!
+    }
+}
+
+enum OpenAIModelCatalog {
+    static func fetch(baseURL: String, apiKey: String) async throws -> [String] {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = OpenAIEndpoint.normalizedBase(baseURL)
+        guard !key.isEmpty, !base.isEmpty else { throw TranslatorError.notConfigured }
+        var request = URLRequest(url: OpenAIEndpoint.url(base: base, path: "/models"))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try throwIfNeeded(response, data)
+        let ids = parseModelIDs(data)
+        var seen = Set<String>()
+        let unique = ids.filter { seen.insert($0).inserted }
+        if unique.isEmpty {
+            throw TranslatorError.models("上游没有返回模型列表，请检查地址和密钥")
+        }
+        return unique.sorted { lhs, rhs in
+            let lChat = lhs.localizedCaseInsensitiveContains("gpt") || lhs.localizedCaseInsensitiveContains("chat")
+            let rChat = rhs.localizedCaseInsensitiveContains("gpt") || rhs.localizedCaseInsensitiveContains("chat")
+            if lChat != rChat { return lChat && !rChat }
+            return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+        }
+    }
+}
+
+private func parseModelIDs(_ data: Data) -> [String] {
+    let object = try? JSONSerialization.jsonObject(with: data)
+    if let json = object as? [String: Any] {
+        if let rows = json["data"] as? [[String: Any]] {
+            return rows.compactMap { row in
+                (row["id"] as? String) ?? (row["name"] as? String)
+            }.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        }
+        if let rows = json["models"] as? [[String: Any]] {
+            return rows.compactMap { row in
+                (row["id"] as? String) ?? (row["name"] as? String)
+            }.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        }
+        if let names = json["data"] as? [String] {
+            return names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        }
+    }
+    if let rows = object as? [[String: Any]] {
+        return rows.compactMap { $0["id"] as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+    if let names = object as? [String] {
+        return names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+    return []
+}
+
+private func flattenContent(_ value: Any?) -> String? {
+    if let text = value as? String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+    if let parts = value as? [[String: Any]] {
+        let joined = parts.compactMap { $0["text"] as? String }.joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? nil : joined
+    }
+    return nil
 }
 
 private func throwIfNeeded(_ response: URLResponse, _ data: Data) throws {

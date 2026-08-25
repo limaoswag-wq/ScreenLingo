@@ -10,7 +10,7 @@ struct RegionEditorView: View {
     var body: some View {
         NavigationView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("拖动蓝色框选择识别范围，拖右下角圆点改大小。只影响直播扩展送来的那一帧里被裁出来的部分。")
+                Text("拖动蓝色框选择识别范围，拖右下角圆点改大小。智能模式通常够用；区域不对再自定义。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
