@@ -1,0 +1,37 @@
+workflows:
+  screenlingo-unsigned-ipa:
+    name: ScreenLingo unsigned IPA
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: optional
+    environment:
+      vars:
+        XCODE_SCHEME: ScreenLingo
+        XCODE_PROJECT: ScreenLingo.xcodeproj
+      xcode: latest
+    scripts:
+      - name: Build unsigned iOS app
+        script: |
+          set -euo pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+      - name: Package IPA
+        script: |
+          set -euo pipefail
+          chmod +x scripts/package_ipa.sh
+          DERIVED_DATA_PATH="$CM_BUILD_DIR/build" \
+          IPA_OUTPUT="$CM_BUILD_DIR/ScreenLingo.ipa" \
+          scripts/package_ipa.sh
+    artifacts:
+      - ScreenLingo.ipa
+      - build/Build/Products/Release-iphoneos/*.app
+      - /tmp/xcodebuild_logs/*.log

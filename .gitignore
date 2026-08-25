@@ -1,0 +1,11 @@
+.DS_Store
+build/
+DerivedData/
+*.ipa
+Payload/
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+*.hmap
+*.ipa
+.idea/
