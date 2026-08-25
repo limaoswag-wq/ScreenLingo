@@ -149,39 +149,30 @@ struct HomeView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if session.isRunning {
-                Button(role: .destructive) {
-                    session.stop()
-                } label: {
-                    Text("停止")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+            if session.settings.translateScene == .reading {
+                if session.isRunning {
+                    stopButton
+                } else {
+                    Button {
+                        session.start()
+                    } label: {
+                        Text("开始翻译")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(AppTheme.ink)
+                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
+                    }
+                    .buttonStyle(PressableButtonStyle())
                 }
-                .buttonStyle(PressableButtonStyle())
-            } else if session.settings.translateScene == .reading {
-                Button {
-                    session.start()
-                } label: {
-                    Text("开始翻译")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(AppTheme.ink)
-                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
-                }
-                .buttonStyle(PressableButtonStyle())
                 Text("阅读模式不用开直播。复制一段文字就会翻译。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            } else if session.isBroadcasting {
+                stopButton
             } else {
                 BroadcastStartButton(title: "开始翻译")
-                    .simultaneousGesture(TapGesture().onEnded {
-                        if !session.isRunning {
-                            session.start()
-                        }
-                    })
             }
 
             PhotosPicker(selection: $photoItem, matching: .images) {
@@ -198,6 +189,18 @@ struct HomeView: View {
             }
         }
         .glass(appearance, breathing: session.isTranslating)
+    }
+
+    private var stopButton: some View {
+        Button(role: .destructive) {
+            session.stop()
+        } label: {
+            Text("停止")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        }
+        .buttonStyle(PressableButtonStyle())
     }
 
     private var resultCard: some View {

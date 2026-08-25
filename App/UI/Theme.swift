@@ -32,6 +32,7 @@ struct GlassCard<Content: View>: View {
             .overlay(
                 RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
                     .stroke(borderColor, lineWidth: breathing ? (pulse ? 1.6 : 0.6) : 0.7)
+                    .allowsHitTesting(false)
             )
             .overlay(alignment: .top) {
                 RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
