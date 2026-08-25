@@ -131,6 +131,9 @@ struct HomeView: View {
                     .font(.footnote)
                     .foregroundStyle(.orange)
             }
+            Text(AppGroupStore.shared.usingAppGroup ? "共享通道：App Group" : "共享通道：本机目录")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding()
         .background(Color(.secondarySystemGroupedBackground))

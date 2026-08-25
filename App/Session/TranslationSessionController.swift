@@ -23,6 +23,7 @@ final class TranslationSessionController: ObservableObject {
     private var lastFrameDate: Date?
     private var lastTextHash = ""
     private var inFlight = false
+    private var waitingTicks = 0
 
     var pipHostView: UIView { pip.hostView }
 
@@ -43,7 +44,8 @@ final class TranslationSessionController: ObservableObject {
     func start() {
         isRunning = true
         lastError = nil
-        statusLine = "等待屏幕画面…"
+        waitingTicks = 0
+        statusLine = waitingMessage()
         SilentAudio.shared.start()
         pip.update(source: "", translated: "等待屏幕画面…")
         pip.start()
@@ -74,13 +76,30 @@ final class TranslationSessionController: ObservableObject {
         isBroadcasting = store.readBroadcasting()
         guard isRunning, !inFlight else { return }
         guard let modified = store.frameModificationDate() else {
-            statusLine = isBroadcasting ? "直播中，尚未收到画面" : "请点开始直播，并在列表里选「屏译」"
+            waitingTicks += 1
+            statusLine = waitingMessage()
             return
         }
         if let lastFrameDate, modified <= lastFrameDate { return }
-        guard let pair = store.readFrameImage() else { return }
+        guard let pair = store.readFrameImage() else {
+            waitingTicks += 1
+            statusLine = waitingMessage()
+            return
+        }
         lastFrameDate = modified
+        waitingTicks = 0
         await process(image: pair.0, force: false)
+    }
+
+    private func waitingMessage() -> String {
+        if let error = store.directoryError {
+            return error
+        }
+        if isBroadcasting {
+            let channel = store.usingAppGroup ? "App Group" : "共享目录"
+            return "直播中，尚未收到画面（\(channel)）"
+        }
+        return "请点开始直播，并在列表里选「屏译」"
     }
 
     private func process(image: CGImage, force: Bool) async {

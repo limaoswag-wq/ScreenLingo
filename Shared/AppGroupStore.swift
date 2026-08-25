@@ -9,27 +9,62 @@ final class AppGroupStore {
 
     let defaults: UserDefaults
     let containerURL: URL?
+    let usingAppGroup: Bool
+    let directoryError: String?
 
-    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    private let ciContext = CIContext(options: [
+        .useSoftwareRenderer: true,
+        .cacheIntermediates: false
+    ])
     private let encoderQueue = DispatchQueue(label: "dev.screenlingo.frame-encoder")
 
     private init() {
-        defaults = UserDefaults(suiteName: AppConstants.appGroupID) ?? .standard
-        containerURL = FileManager.default.containerURL(
+        let groupDefaults = UserDefaults(suiteName: AppConstants.appGroupID)
+        let groupURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: AppConstants.appGroupID
         )
+        if let groupURL {
+            try? FileManager.default.createDirectory(at: groupURL, withIntermediateDirectories: true)
+            defaults = groupDefaults ?? .standard
+            containerURL = groupURL
+            usingAppGroup = true
+            directoryError = nil
+        } else if let fallback = Self.makeFallbackDirectory() {
+            defaults = .standard
+            containerURL = fallback
+            usingAppGroup = false
+            directoryError = nil
+        } else {
+            defaults = .standard
+            containerURL = nil
+            usingAppGroup = false
+            directoryError = "共享目录不可用。扩展写不出画面，主程序也读不到。"
+        }
+    }
+
+    var debugPath: String {
+        containerURL?.path ?? "(无)"
     }
 
     func loadSettings() -> AppSettings {
-        guard let data = defaults.data(forKey: AppSettings.storageKey) else {
-            return AppSettings()
+        if let data = defaults.data(forKey: AppSettings.storageKey),
+           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            return decoded
         }
-        return (try? JSONDecoder().decode(AppSettings.self, from: data)) ?? AppSettings()
+        if let dir = containerURL,
+           let data = try? Data(contentsOf: dir.appendingPathComponent("settings.json")),
+           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            return decoded
+        }
+        return AppSettings()
     }
 
     func saveSettings(_ settings: AppSettings) {
         if let data = try? JSONEncoder().encode(settings) {
             defaults.set(data, forKey: AppSettings.storageKey)
+            if let dir = containerURL {
+                atomicWrite(data, to: dir.appendingPathComponent("settings.json"))
+            }
         }
     }
 
@@ -39,6 +74,7 @@ final class AppGroupStore {
             startedAt: running ? Date().timeIntervalSince1970 : nil
         )
         writeJSON(state, name: AppConstants.broadcastStateFileName)
+        writeDebug("broadcasting=\(running)")
         postDarwin(name: AppConstants.darwinBroadcastState)
     }
 
@@ -53,9 +89,10 @@ final class AppGroupStore {
     }
 
     func readFrameImage() -> (CGImage, FrameMeta)? {
+        guard let dir = containerURL else { return nil }
+        let url = dir.appendingPathComponent(AppConstants.frameFileName)
         guard
-            let dir = containerURL,
-            let data = try? Data(contentsOf: dir.appendingPathComponent(AppConstants.frameFileName)),
+            let data = try? Data(contentsOf: url),
             let source = CGImageSourceCreateWithData(data as CFData, nil),
             let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
         else { return nil }
@@ -76,31 +113,39 @@ final class AppGroupStore {
     }
 
     private func encodeAndWrite(pixelBuffer: CVPixelBuffer, orientation: Int) {
-        guard let dir = containerURL else { return }
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let extent = ciImage.extent
-        let scale = min(1, AppConstants.maxFrameWidth / max(extent.width, 1))
-        let scaled: CIImage
-        if scale < 0.999 {
-            scaled = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        } else {
-            scaled = ciImage
+        guard let dir = containerURL else {
+            return
         }
-        let rect = scaled.extent.integral
-        guard let cgImage = ciContext.createCGImage(scaled, from: rect) else { return }
-        guard let data = jpegData(from: cgImage) else { return }
-
+        guard let data = jpegData(from: pixelBuffer) else {
+            writeDebug("jpeg encode failed")
+            return
+        }
         let frameURL = dir.appendingPathComponent(AppConstants.frameFileName)
         atomicWrite(data, to: frameURL)
 
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
         let meta = FrameMeta(
-            width: cgImage.width,
-            height: cgImage.height,
+            width: width,
+            height: height,
             timestamp: Date().timeIntervalSince1970,
             orientation: orientation
         )
         writeJSON(meta, name: AppConstants.frameMetaFileName)
+        writeDebug("frame \(width)x\(height) bytes=\(data.count)")
         postDarwin(name: AppConstants.darwinFrameReady)
+    }
+
+    private func jpegData(from pixelBuffer: CVPixelBuffer) -> Data? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let extent = ciImage.extent
+        let scale = min(1, AppConstants.maxFrameWidth / max(extent.width, 1))
+        let scaled = scale < 0.999
+            ? ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            : ciImage
+        let rect = scaled.extent.integral
+        guard let cgImage = ciContext.createCGImage(scaled, from: rect) else { return nil }
+        return jpegData(from: cgImage)
     }
 
     private func jpegData(from image: CGImage) -> Data? {
@@ -127,15 +172,27 @@ final class AppGroupStore {
         return try? JSONDecoder().decode(type, from: data)
     }
 
+    private func writeDebug(_ line: String) {
+        guard let dir = containerURL else { return }
+        let text = "\(Date().timeIntervalSince1970) \(line)\n"
+        let url = dir.appendingPathComponent("debug.log")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(Data(text.utf8))
+            try? handle.close()
+        } else {
+            try? Data(text.utf8).write(to: url)
+        }
+    }
+
     private func atomicWrite(_ data: Data, to url: URL) {
         let tmp = url.appendingPathExtension("tmp")
         do {
             try data.write(to: tmp, options: .atomic)
             if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
-            } else {
-                try FileManager.default.moveItem(at: tmp, to: url)
+                try FileManager.default.removeItem(at: url)
             }
+            try FileManager.default.moveItem(at: tmp, to: url)
         } catch {
             try? data.write(to: url, options: .atomic)
         }
@@ -149,5 +206,27 @@ final class AppGroupStore {
             nil,
             true
         )
+    }
+
+    /// Jailbreak / TrollStore fallback when App Group container is missing.
+    private static func makeFallbackDirectory() -> URL? {
+        let candidates = [
+            URL(fileURLWithPath: "/var/tmp/dev.screenlingo", isDirectory: true),
+            URL(fileURLWithPath: "/tmp/dev.screenlingo", isDirectory: true),
+            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("dev.screenlingo", isDirectory: true)
+        ].compactMap { $0 }
+        for url in candidates {
+            do {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                let probe = url.appendingPathComponent(".probe")
+                try Data("ok".utf8).write(to: probe)
+                try FileManager.default.removeItem(at: probe)
+                return url
+            } catch {
+                continue
+            }
+        }
+        return nil
     }
 }

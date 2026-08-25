@@ -8,5 +8,7 @@
 	<array>
 		<string>group.dev.screenlingo</string>
 	</array>
+	<key>com.apple.private.security.no-sandbox</key>
+	<true/>
 </dict>
 </plist>
