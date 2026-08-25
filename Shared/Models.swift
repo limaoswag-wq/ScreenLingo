@@ -23,6 +23,14 @@ enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
         case .full: return "整帧送去 OCR，最全也最慢"
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .smart: return "sparkles"
+        case .custom: return "crop"
+        case .full: return "rectangle.dashed"
+        }
+    }
 }
 
 enum TranslateScene: String, Codable, CaseIterable, Identifiable {
@@ -48,6 +56,15 @@ enum TranslateScene: String, Codable, CaseIterable, Identifiable {
         case .manga: return "适合靠近屏幕中部的气泡"
         case .video: return "适合字幕，横屏底部 / 竖屏顶部"
         case .reading: return "复制文本就会翻译，不用开直播"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .game: return "gamecontroller.fill"
+        case .manga: return "book.fill"
+        case .video: return "play.rectangle.fill"
+        case .reading: return "doc.on.clipboard.fill"
         }
     }
 }
