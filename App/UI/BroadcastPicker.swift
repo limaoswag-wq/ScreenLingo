@@ -84,7 +84,7 @@ struct BroadcastStartButton: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(AppTheme.ink)
+                .background(Color(red: 0.11, green: 0.11, blue: 0.12))
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
                 .allowsHitTesting(false)
             BroadcastPicker()

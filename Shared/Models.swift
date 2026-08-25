@@ -1,5 +1,7 @@
 import Foundation
 import CoreGraphics
+import UIKit
+import SwiftUI
 
 enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
     case smart
@@ -84,11 +86,12 @@ enum OCREngineKind: String, Codable, CaseIterable, Identifiable {
 }
 
 enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
-    case apple
-    case google
     case baidu
-    case deepl
+    case tencent
     case openai
+    case google
+    case deepl
+    case apple
 
     var id: String { rawValue }
 
@@ -97,8 +100,26 @@ enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
         case .apple: return "Apple 翻译"
         case .google: return "Google Translate"
         case .baidu: return "百度翻译"
+        case .tencent: return "腾讯翻译"
         case .deepl: return "DeepL"
         case .openai: return "自定义 AI"
+        }
+    }
+
+    var selectable: Bool { self != .apple }
+
+    static var selectableCases: [TranslatorKind] {
+        allCases.filter(\.selectable)
+    }
+
+    var defaultHex: String {
+        switch self {
+        case .baidu: return "#3B82F6"
+        case .tencent: return "#22C55E"
+        case .openai: return "#EAB308"
+        case .google: return "#EF4444"
+        case .deepl: return "#14B8A6"
+        case .apple: return "#9CA3AF"
         }
     }
 }
@@ -152,11 +173,31 @@ enum CaptionFontSize: String, Codable, CaseIterable, Identifiable {
 
     var translatedPoints: CGFloat {
         switch self {
-        case .small: return 22
-        case .medium: return 28
-        case .large: return 34
-        case .extraLarge: return 42
+        case .small: return 20
+        case .medium: return 24
+        case .large: return 30
+        case .extraLarge: return 36
         }
+    }
+}
+
+enum AppColorTheme: String, Codable, CaseIterable, Identifiable {
+    case frosted
+    case claude
+    case codex
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .frosted: return "磨砂玻璃"
+        case .claude: return "暖色"
+        case .codex: return "蓝白"
+        }
+    }
+
+    var appearance: AppearanceStyle {
+        self == .frosted ? .frosted : .solid
     }
 }
 
@@ -191,9 +232,9 @@ enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
 
     var canvas: CGSize {
         switch self {
-        case .small: return CGSize(width: 640, height: 168)
-        case .medium: return CGSize(width: 720, height: 220)
-        case .large: return CGSize(width: 900, height: 280)
+        case .small: return CGSize(width: 640, height: 220)
+        case .medium: return CGSize(width: 720, height: 280)
+        case .large: return CGSize(width: 900, height: 360)
         }
     }
 }
@@ -224,7 +265,6 @@ struct LanguageOption: Identifiable, Hashable {
     ]
 }
 
-/// Normalized rect in 0...1, relative to the captured frame.
 struct OCRRegion: Codable, Equatable {
     var x: Double
     var y: Double
@@ -259,14 +299,23 @@ struct OCRRegion: Codable, Equatable {
 
 struct TextBox: Equatable {
     var text: String
-    /// Vision bounding box, origin bottom-left, 0...1.
     var boundingBox: CGRect
 }
 
-struct TranslateResult: Equatable {
-    var source: String
-    var translated: String
-    var boxes: [TextBox]
+struct CaptionLine: Equatable, Identifiable {
+    var engine: TranslatorKind
+    var text: String
+    var pending: Bool
+    var error: String?
+    var hex: String
+
+    var id: String { engine.rawValue }
+
+    var displayText: String {
+        if let error, !error.isEmpty { return error }
+        if pending && text.isEmpty { return "翻译中…" }
+        return text
+    }
 }
 
 struct FrameMeta: Codable {
@@ -279,4 +328,46 @@ struct FrameMeta: Codable {
 struct BroadcastState: Codable {
     var isBroadcasting: Bool
     var startedAt: TimeInterval?
+}
+
+enum HexColor {
+    static func uiColor(from hex: String) -> UIColor {
+        var h = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        if h.count == 6 { h += "FF" }
+        guard h.count == 8, let n = UInt64(h, radix: 16) else {
+            return UIColor.white
+        }
+        return UIColor(
+            red: CGFloat((n >> 24) & 0xFF) / 255,
+            green: CGFloat((n >> 16) & 0xFF) / 255,
+            blue: CGFloat((n >> 8) & 0xFF) / 255,
+            alpha: CGFloat(n & 0xFF) / 255
+        )
+    }
+
+    static func hex(from color: UIColor) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(
+            format: "#%02X%02X%02X",
+            Int(r * 255), Int(g * 255), Int(b * 255)
+        )
+    }
+
+    static func hex(fromSwiftUI color: Color) -> String {
+        if #available(iOS 17.0, *) {
+            return hex(from: UIColor(color))
+        }
+        let host = UIHostingController(rootView: color)
+        host.view.bounds = CGRect(x: 0, y: 0, width: 2, height: 2)
+        host.view.backgroundColor = .clear
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
+        let image = renderer.image { _ in
+            host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+        }
+        guard let cg = image.cgImage else { return "#FFFFFF" }
+        let pixel = cg.dataProvider?.data
+        guard let pointer = CFDataGetBytePtr(pixel) else { return "#FFFFFF" }
+        return String(format: "#%02X%02X%02X", pointer[0], pointer[1], pointer[2])
+    }
 }

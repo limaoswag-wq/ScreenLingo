@@ -13,10 +13,10 @@ final class PiPCaptionController: NSObject {
     var windowSize: CaptionWindowSize = .medium {
         didSet { canvasSize = windowSize.canvas }
     }
-    private var canvasSize = CGSize(width: 720, height: 220)
+    private var canvasSize = CGSize(width: 720, height: 280)
     private var lastSource = ""
-    private var lastTranslated = "屏译已就绪"
-    private var lastError: String?
+    private var lastLines: [CaptionLine] = []
+    private var emptyMessage: String?
 
     override init() {
         super.init()
@@ -56,10 +56,10 @@ final class PiPCaptionController: NSObject {
         pip?.stopPictureInPicture()
     }
 
-    func update(source: String, translated: String, error: String? = nil) {
+    func update(source: String, lines: [CaptionLine], emptyMessage: String? = nil) {
         lastSource = source
-        lastTranslated = translated
-        lastError = error
+        lastLines = lines
+        self.emptyMessage = emptyMessage
         render()
     }
 
@@ -80,44 +80,43 @@ final class PiPCaptionController: NSObject {
             UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1).setFill()
             ctx.fill(rect)
 
-            let inset = rect.insetBy(dx: 28, dy: 18)
-            if let lastError, !lastError.isEmpty {
-                drawCentered(
-                    lastError,
-                    font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium),
-                    color: .systemOrange,
-                    in: inset
-                )
+            let inset = rect.insetBy(dx: 24, dy: 14)
+            var y = inset.minY
+            if !lastSource.isEmpty {
+                let sourceFont = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .regular)
+                let sourceHeight = height(of: lastSource, font: sourceFont, width: inset.width)
+                drawCentered(lastSource, font: sourceFont, color: .white, in: CGRect(x: inset.minX, y: y, width: inset.width, height: sourceHeight))
+                y += sourceHeight + 8
+                UIColor(white: 1, alpha: 0.18).setStroke()
+                let line = UIBezierPath()
+                line.move(to: CGPoint(x: inset.minX + 36, y: y))
+                line.addLine(to: CGPoint(x: inset.maxX - 36, y: y))
+                line.lineWidth = 1
+                line.stroke()
+                y += 8
+            }
+            if let emptyMessage, lastLines.isEmpty {
+                let font = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .medium)
+                let h = height(of: emptyMessage, font: font, width: inset.width)
+                drawCentered(emptyMessage, font: font, color: .systemOrange, in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
+            } else if lastLines.isEmpty && lastSource.isEmpty {
+                let text = "切换到其他 App 开始翻译"
+                let font = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .medium)
+                let h = height(of: text, font: font, width: inset.width)
+                drawCentered(text, font: font, color: UIColor(white: 0.78, alpha: 1), in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
             } else {
-                let source = lastSource
-                let translated = lastTranslated
-                if source.isEmpty && translated.isEmpty {
-                    drawCentered("切换到其他 App 开始翻译", font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium), color: UIColor(white: 0.78, alpha: 1), in: inset)
-                } else if source.isEmpty {
-                    drawCentered(translated, font: .systemFont(ofSize: fontSize.translatedPoints, weight: .semibold), color: UIColor(red: 0.55, green: 0.92, blue: 0.95, alpha: 1), in: inset)
-                } else {
-                    let gap: CGFloat = 10
-                    let sourceFont = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .regular)
-                    let transFont = UIFont.systemFont(ofSize: fontSize.translatedPoints, weight: .semibold)
-                    let sourceHeight = height(of: source, font: sourceFont, width: inset.width)
-                    let transHeight = height(of: translated.isEmpty ? "翻译中…" : translated, font: transFont, width: inset.width)
-                    let total = sourceHeight + gap + transHeight
-                    var y = inset.midY - total / 2
-                    drawCentered(source, font: sourceFont, color: .white, in: CGRect(x: inset.minX, y: y, width: inset.width, height: sourceHeight))
-                    y += sourceHeight + gap
-                    let lineY = y - gap / 2
-                    UIColor(white: 1, alpha: 0.18).setStroke()
-                    let line = UIBezierPath()
-                    line.move(to: CGPoint(x: inset.minX + 24, y: lineY))
-                    line.addLine(to: CGPoint(x: inset.maxX - 24, y: lineY))
-                    line.lineWidth = 1
-                    line.stroke()
-                    drawCentered(
-                        translated.isEmpty ? "翻译中…" : translated,
-                        font: transFont,
-                        color: translated.isEmpty ? UIColor(white: 0.72, alpha: 1) : UIColor(red: 0.55, green: 0.92, blue: 0.95, alpha: 1),
-                        in: CGRect(x: inset.minX, y: y, width: inset.width, height: transHeight)
-                    )
+                let transFont = UIFont.systemFont(ofSize: fontSize.translatedPoints, weight: .semibold)
+                for line in lastLines {
+                    let text = line.displayText
+                    let color: UIColor = {
+                        if line.error != nil { return .systemOrange }
+                        if line.pending && line.text.isEmpty { return UIColor(white: 0.72, alpha: 1) }
+                        return HexColor.uiColor(from: line.hex)
+                    }()
+                    let h = height(of: text, font: transFont, width: inset.width)
+                    drawCentered(text, font: transFont, color: color, in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
+                    y += h + 4
+                    if y > inset.maxY { break }
                 }
             }
         }

@@ -1,29 +1,29 @@
 import SwiftUI
-import PhotosUI
 import UIKit
 
 struct HomeView: View {
     @ObservedObject var session: TranslationSessionController
-    @State private var photoItem: PhotosPickerItem?
     @State private var showRegionEditor = false
     @State private var showSourcePicker = false
     @State private var showTargetPicker = false
     @Environment(\.colorScheme) private var colorScheme
 
-    private var appearance: AppearanceStyle { session.settings.appearanceStyle }
+    private var appearance: AppearanceStyle { session.settings.colorTheme.appearance }
+    private var palette: ThemePalette { AppTheme.palette(session.settings.colorTheme) }
 
     var body: some View {
         NavigationView {
             ZStack {
                 canvas.ignoresSafeArea()
+                palette.wash.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
                         hero
                         languageCard
-                        sceneCard
                         areaCard
                         startCard
                         resultCard
+                        sceneCard
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
@@ -35,7 +35,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
                         Image(systemName: "captions.bubble.fill")
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(palette.ink)
                         Text("屏译")
                             .font(.headline)
                     }
@@ -58,10 +58,6 @@ struct HomeView: View {
                     .allowsHitTesting(false),
                 alignment: .bottomTrailing
             )
-            .onChange(of: photoItem) { newValue in
-                guard let newValue else { return }
-                Task { await loadPhoto(newValue) }
-            }
             .sheet(isPresented: $showRegionEditor) {
                 RegionEditorView(region: $session.settings.customRegion)
             }
@@ -84,11 +80,7 @@ struct HomeView: View {
     }
 
     private var canvas: Color {
-        Color(UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1)
-                : UIColor(red: 0.957, green: 0.957, blue: 0.961, alpha: 1)
-        })
+        colorScheme == .dark ? palette.canvasDark : palette.canvasLight
     }
 
     private var hero: some View {
@@ -210,7 +202,7 @@ struct HomeView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(session.settings.recognitionMode == mode ? AppTheme.ink : Color.primary.opacity(0.05))
+                        .background(session.settings.recognitionMode == mode ? palette.ink : Color.primary.opacity(0.05))
                         .foregroundStyle(session.settings.recognitionMode == mode ? Color.white : Color.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
@@ -238,7 +230,7 @@ struct HomeView: View {
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
-                            .background(AppTheme.ink)
+                            .background(palette.ink)
                             .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
                     }
                     .buttonStyle(PressableButtonStyle())
@@ -252,16 +244,11 @@ struct HomeView: View {
                 BroadcastStartButton(title: "开始翻译")
             }
 
-            PhotosPicker(selection: $photoItem, matching: .images) {
-                Label("用相册图片试一次", systemImage: "photo")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(PressableButtonStyle())
-
-            if !session.settings.translatorIsConfigured() {
+            if session.settings.activeTranslators.isEmpty {
+                Label("没勾选翻译源", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            } else if !session.settings.translatorIsConfigured() {
                 Label("需要先设置 API Key", systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
                     .foregroundStyle(.orange)
@@ -294,20 +281,19 @@ struct HomeView: View {
             if session.settings.showSourceText, !session.lastSource.isEmpty {
                 captionBlock(title: "识别", text: session.lastSource, emphasized: false)
             }
-            if session.isTranslating && session.lastTranslated.isEmpty {
-                HStack {
-                    ProgressView()
-                    Text("翻译中…")
-                }
-                .frame(maxWidth: .infinity)
-                .foregroundStyle(.secondary)
-            } else if !session.lastTranslated.isEmpty {
-                captionBlock(title: "译文", text: session.lastTranslated, emphasized: true)
-            } else if session.lastSource.isEmpty {
+            if session.captionLines.isEmpty && session.lastSource.isEmpty {
                 Text("还没有识别结果。")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 18)
+            } else {
+                ForEach(session.captionLines) { line in
+                    Text(line.displayText)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color(HexColor.uiColor(from: line.hex)))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -330,19 +316,6 @@ struct HomeView: View {
         .padding(.vertical, 8)
     }
 
-    @MainActor
-    private func loadPhoto(_ item: PhotosPickerItem) async {
-        do {
-            guard let data = try await item.loadTransferable(type: Data.self),
-                  let image = UIImage(data: data),
-                  let cgImage = image.cgImage
-            else { return }
-            if !session.isRunning { session.start() }
-            await session.previewPhoto(cgImage)
-        } catch {
-            session.lastError = error.localizedDescription
-        }
-    }
 }
 
 struct LanguagePickerSheet: View {
@@ -364,7 +337,7 @@ struct LanguagePickerSheet: View {
                         Spacer()
                         if option.id == selection {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(AppTheme.ink)
+                                .foregroundStyle(Color.primary)
                         }
                     }
                 }

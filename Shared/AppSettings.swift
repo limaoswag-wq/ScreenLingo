@@ -5,6 +5,8 @@ struct AppSettings: Codable, Equatable {
     var translateScene: TranslateScene = .video
     var ocrEngine: OCREngineKind = .visionFast
     var translator: TranslatorKind = .openai
+    var enabledTranslators: [TranslatorKind] = []
+    var translatorColors: [String: String] = [:]
     var sourceLanguage: String = LanguageOption.auto.id
     var targetLanguage: String = LanguageOption.zhHans.id
     var customRegion: OCRRegion = OCRRegion(x: 0.08, y: 0.72, width: 0.84, height: 0.22)
@@ -14,16 +16,19 @@ struct AppSettings: Codable, Equatable {
     var captionFontSize: CaptionFontSize = .medium
     var captionWindowSize: CaptionWindowSize = .medium
     var appearanceStyle: AppearanceStyle = .frosted
+    var colorTheme: AppColorTheme = .frosted
 
     var googleAPIKey: String = ""
     var baiduAppID: String = ""
     var baiduSecret: String = ""
+    var tencentSecretId: String = ""
+    var tencentSecretKey: String = ""
     var deeplAPIKey: String = ""
     var openaiBaseURL: String = "https://api.openai.com/v1"
     var openaiAPIKey: String = ""
     var openaiModel: String = "gpt-4o-mini"
     var openaiAPIMode: OpenAIAPIMode = .chat
-    var openaiMaxTokens: Int = 256
+    var openaiMaxTokens: Int = 512
     var openaiPrompt: String = AppSettings.defaultPrompt
 
     static let defaultPrompt = "把原文译成指定目标语言。只输出译文，不要解释，不要拼音，不要引号。保留换行。"
@@ -32,10 +37,12 @@ struct AppSettings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case recognitionMode, translateScene, ocrEngine, translator
+        case enabledTranslators, translatorColors
         case sourceLanguage, targetLanguage, customRegion
         case showSourceText, showRuby, captureInterval
-        case captionFontSize, captionWindowSize, appearanceStyle
-        case googleAPIKey, baiduAppID, baiduSecret, deeplAPIKey
+        case captionFontSize, captionWindowSize, appearanceStyle, colorTheme
+        case googleAPIKey, baiduAppID, baiduSecret
+        case tencentSecretId, tencentSecretKey, deeplAPIKey
         case openaiBaseURL, openaiAPIKey, openaiModel, openaiAPIMode
         case openaiMaxTokens, openaiPrompt
     }
@@ -48,6 +55,8 @@ struct AppSettings: Codable, Equatable {
         translateScene = try c.decodeIfPresent(TranslateScene.self, forKey: .translateScene) ?? .video
         ocrEngine = try c.decodeIfPresent(OCREngineKind.self, forKey: .ocrEngine) ?? .visionFast
         translator = try c.decodeIfPresent(TranslatorKind.self, forKey: .translator) ?? .openai
+        enabledTranslators = try c.decodeIfPresent([TranslatorKind].self, forKey: .enabledTranslators) ?? []
+        translatorColors = try c.decodeIfPresent([String: String].self, forKey: .translatorColors) ?? [:]
         sourceLanguage = try c.decodeIfPresent(String.self, forKey: .sourceLanguage) ?? LanguageOption.auto.id
         targetLanguage = try c.decodeIfPresent(String.self, forKey: .targetLanguage) ?? LanguageOption.zhHans.id
         customRegion = try c.decodeIfPresent(OCRRegion.self, forKey: .customRegion)
@@ -58,16 +67,21 @@ struct AppSettings: Codable, Equatable {
         captionFontSize = try c.decodeIfPresent(CaptionFontSize.self, forKey: .captionFontSize) ?? .medium
         captionWindowSize = try c.decodeIfPresent(CaptionWindowSize.self, forKey: .captionWindowSize) ?? .medium
         appearanceStyle = try c.decodeIfPresent(AppearanceStyle.self, forKey: .appearanceStyle) ?? .frosted
+        colorTheme = try c.decodeIfPresent(AppColorTheme.self, forKey: .colorTheme)
+            ?? (appearanceStyle == .solid ? .claude : .frosted)
         googleAPIKey = try c.decodeIfPresent(String.self, forKey: .googleAPIKey) ?? ""
         baiduAppID = try c.decodeIfPresent(String.self, forKey: .baiduAppID) ?? ""
         baiduSecret = try c.decodeIfPresent(String.self, forKey: .baiduSecret) ?? ""
+        tencentSecretId = try c.decodeIfPresent(String.self, forKey: .tencentSecretId) ?? ""
+        tencentSecretKey = try c.decodeIfPresent(String.self, forKey: .tencentSecretKey) ?? ""
         deeplAPIKey = try c.decodeIfPresent(String.self, forKey: .deeplAPIKey) ?? ""
         openaiBaseURL = try c.decodeIfPresent(String.self, forKey: .openaiBaseURL) ?? "https://api.openai.com/v1"
         openaiAPIKey = try c.decodeIfPresent(String.self, forKey: .openaiAPIKey) ?? ""
         openaiModel = try c.decodeIfPresent(String.self, forKey: .openaiModel) ?? "gpt-4o-mini"
         openaiAPIMode = try c.decodeIfPresent(OpenAIAPIMode.self, forKey: .openaiAPIMode) ?? .chat
-        openaiMaxTokens = try c.decodeIfPresent(Int.self, forKey: .openaiMaxTokens) ?? 256
+        openaiMaxTokens = try c.decodeIfPresent(Int.self, forKey: .openaiMaxTokens) ?? 512
         openaiPrompt = try c.decodeIfPresent(String.self, forKey: .openaiPrompt) ?? AppSettings.defaultPrompt
+        if openaiMaxTokens < 64 { openaiMaxTokens = 512 }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -76,6 +90,8 @@ struct AppSettings: Codable, Equatable {
         try c.encode(translateScene, forKey: .translateScene)
         try c.encode(ocrEngine, forKey: .ocrEngine)
         try c.encode(translator, forKey: .translator)
+        try c.encode(enabledTranslators, forKey: .enabledTranslators)
+        try c.encode(translatorColors, forKey: .translatorColors)
         try c.encode(sourceLanguage, forKey: .sourceLanguage)
         try c.encode(targetLanguage, forKey: .targetLanguage)
         try c.encode(customRegion, forKey: .customRegion)
@@ -85,9 +101,12 @@ struct AppSettings: Codable, Equatable {
         try c.encode(captionFontSize, forKey: .captionFontSize)
         try c.encode(captionWindowSize, forKey: .captionWindowSize)
         try c.encode(appearanceStyle, forKey: .appearanceStyle)
+        try c.encode(colorTheme, forKey: .colorTheme)
         try c.encode(googleAPIKey, forKey: .googleAPIKey)
         try c.encode(baiduAppID, forKey: .baiduAppID)
         try c.encode(baiduSecret, forKey: .baiduSecret)
+        try c.encode(tencentSecretId, forKey: .tencentSecretId)
+        try c.encode(tencentSecretKey, forKey: .tencentSecretKey)
         try c.encode(deeplAPIKey, forKey: .deeplAPIKey)
         try c.encode(openaiBaseURL, forKey: .openaiBaseURL)
         try c.encode(openaiAPIKey, forKey: .openaiAPIKey)
@@ -97,14 +116,45 @@ struct AppSettings: Codable, Equatable {
         try c.encode(openaiPrompt, forKey: .openaiPrompt)
     }
 
-    func translatorIsConfigured() -> Bool {
-        switch translator {
+    var activeTranslators: [TranslatorKind] {
+        let unique = enabledTranslators.filter(\.selectable)
+        var seen = Set<TranslatorKind>()
+        return unique.filter { seen.insert($0).inserted }
+    }
+
+    func colorHex(for kind: TranslatorKind) -> String {
+        translatorColors[kind.rawValue] ?? kind.defaultHex
+    }
+
+    mutating func setColor(_ hex: String, for kind: TranslatorKind) {
+        translatorColors[kind.rawValue] = hex
+    }
+
+    mutating func toggleTranslator(_ kind: TranslatorKind) {
+        guard kind.selectable else { return }
+        if let index = enabledTranslators.firstIndex(of: kind) {
+            enabledTranslators.remove(at: index)
+        } else {
+            enabledTranslators.append(kind)
+        }
+        translator = enabledTranslators.first ?? .openai
+    }
+
+    func isEnabled(_ kind: TranslatorKind) -> Bool {
+        enabledTranslators.contains(kind)
+    }
+
+    func translatorIsConfigured(_ kind: TranslatorKind? = nil) -> Bool {
+        switch kind ?? translator {
         case .apple:
-            return true
+            return false
         case .google:
             return !googleAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .baidu:
             return !baiduAppID.isEmpty && !baiduSecret.isEmpty
+        case .tencent:
+            return !tencentSecretId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !tencentSecretKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .deepl:
             return !deeplAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .openai:
@@ -112,5 +162,9 @@ struct AppSettings: Codable, Equatable {
                 && !openaiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && !openaiModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+    }
+
+    func translatorIsConfigured() -> Bool {
+        !activeTranslators.isEmpty && activeTranslators.contains(where: { translatorIsConfigured($0) })
     }
 }

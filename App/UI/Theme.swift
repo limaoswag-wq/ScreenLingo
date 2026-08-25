@@ -1,15 +1,47 @@
 import SwiftUI
 
 enum AppTheme {
-    static let canvas = Color(red: 0.957, green: 0.957, blue: 0.961)
-    static let canvasDark = Color(red: 0.09, green: 0.09, blue: 0.10)
-    static let ink = Color(red: 0.11, green: 0.11, blue: 0.12)
-    static let stroke = Color.white.opacity(0.46)
-    static let strokeDark = Color.white.opacity(0.10)
     static let ease = Animation.timingCurve(0.16, 1.0, 0.30, 1.0, duration: 0.18)
     static let spring = Animation.spring(response: 0.38, dampingFraction: 0.86)
     static let cardRadius: CGFloat = 24
     static let buttonRadius: CGFloat = 16
+
+    static func palette(_ theme: AppColorTheme) -> ThemePalette {
+        switch theme {
+        case .frosted:
+            return ThemePalette(
+                canvasLight: Color(red: 0.93, green: 0.93, blue: 0.95),
+                canvasDark: Color(red: 0.10, green: 0.10, blue: 0.12),
+                ink: Color(red: 0.11, green: 0.11, blue: 0.12),
+                accent: Color(red: 0.18, green: 0.18, blue: 0.20),
+                wash: Color(red: 0.78, green: 0.82, blue: 0.90).opacity(0.35)
+            )
+        case .claude:
+            return ThemePalette(
+                canvasLight: Color(red: 0.97, green: 0.95, blue: 0.91),
+                canvasDark: Color(red: 0.16, green: 0.13, blue: 0.10),
+                ink: Color(red: 0.42, green: 0.27, blue: 0.18),
+                accent: Color(red: 0.78, green: 0.47, blue: 0.28),
+                wash: Color(red: 0.93, green: 0.82, blue: 0.66).opacity(0.45)
+            )
+        case .codex:
+            return ThemePalette(
+                canvasLight: Color(red: 0.94, green: 0.96, blue: 0.99),
+                canvasDark: Color(red: 0.07, green: 0.11, blue: 0.18),
+                ink: Color(red: 0.12, green: 0.27, blue: 0.49),
+                accent: Color(red: 0.20, green: 0.45, blue: 0.82),
+                wash: Color(red: 0.70, green: 0.82, blue: 0.95).opacity(0.40)
+            )
+        }
+    }
+}
+
+struct ThemePalette {
+    var canvasLight: Color
+    var canvasDark: Color
+    var ink: Color
+    var accent: Color
+    var wash: Color
 }
 
 struct GlassCard<Content: View>: View {
@@ -157,7 +189,7 @@ struct SelectableTile: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(selected ? Color.white : Color.primary)
                 .frame(width: 36, height: 36)
-                .background(selected ? AppTheme.ink : Color.primary.opacity(0.06))
+                .background(selected ? Color.primary : Color.primary.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .scaleEffect(selected ? 1.04 : 1)
             Text(title)
@@ -184,7 +216,7 @@ struct SelectableTile: View {
         }
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(selected ? AppTheme.ink.opacity(0.85) : Color.white.opacity(0.28), lineWidth: selected ? 1.4 : 0.6)
+                .stroke(selected ? Color.primary.opacity(0.85) : Color.white.opacity(0.28), lineWidth: selected ? 1.4 : 0.6)
         )
         .shadow(color: selected ? Color.black.opacity(0.08) : .clear, radius: 10, y: 4)
         .animation(AppTheme.spring, value: selected)

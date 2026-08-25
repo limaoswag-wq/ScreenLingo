@@ -3,6 +3,23 @@ import CryptoKit
 
 protocol Translator {
     func translate(_ text: String, settings: AppSettings) async throws -> String
+    func translate(
+        _ text: String,
+        settings: AppSettings,
+        onPartial: (@Sendable (String) -> Void)?
+    ) async throws -> String
+}
+
+extension Translator {
+    func translate(
+        _ text: String,
+        settings: AppSettings,
+        onPartial: (@Sendable (String) -> Void)?
+    ) async throws -> String {
+        let result = try await translate(text, settings: settings)
+        onPartial?(result)
+        return result
+    }
 }
 
 enum TranslatorError: LocalizedError {
@@ -19,7 +36,7 @@ enum TranslatorError: LocalizedError {
         case .empty: return "没有可翻译的文本"
         case .http(let code, let body): return "翻译接口失败（\(code)）\(body.isEmpty ? "" : "：\(body.prefix(160))")"
         case .decode: return "翻译结果解析失败"
-        case .appleUnavailable: return "Apple 翻译需要更新的系统语言包接口，当前请改用自定义 AI / DeepL / Google / 百度"
+        case .appleUnavailable: return "Apple 翻译需要 iOS 18，当前系统不可用。请改用百度 / 腾讯 / 自定义 AI"
         case .models(let message): return message
         }
     }
@@ -33,6 +50,7 @@ enum TranslatorFactory {
         case .baidu: return BaiduTranslator()
         case .deepl: return DeepLTranslator()
         case .openai: return OpenAITranslator()
+        case .tencent: return TencentTranslator()
         }
     }
 }
@@ -144,6 +162,97 @@ struct BaiduTranslator: Translator {
     }
 }
 
+struct TencentTranslator: Translator {
+    func translate(_ text: String, settings: AppSettings) async throws -> String {
+        let secretId = settings.tencentSecretId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secretKey = settings.tencentSecretKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !secretId.isEmpty, !secretKey.isEmpty else { throw TranslatorError.notConfigured }
+        let payload: [String: Any] = [
+            "SourceText": text,
+            "Source": tencentCode(settings.sourceLanguage),
+            "Target": tencentCode(settings.targetLanguage),
+            "ProjectId": 0
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let date = tencentDate(timestamp)
+        let hashedBody = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+        let canonical = [
+            "POST",
+            "/",
+            "",
+            "content-type:application/json; charset=utf-8",
+            "host:tmt.tencentcloudapi.com",
+            "",
+            "content-type;host",
+            hashedBody
+        ].joined(separator: "\n")
+        let canonicalHash = SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
+        let credentialScope = "\(date)/tmt/tc3_request"
+        let stringToSign = "TC3-HMAC-SHA256\n\(timestamp)\n\(credentialScope)\n\(canonicalHash)"
+        let secretDate = hmac("TC3" + secretKey, date)
+        let secretService = hmac(secretDate, "tmt")
+        let secretSigning = hmac(secretService, "tc3_request")
+        let signature = hmacHex(secretSigning, stringToSign)
+        var request = URLRequest(url: URL(string: "https://tmt.tencentcloudapi.com")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.timeoutInterval = 12
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("tmt.tencentcloudapi.com", forHTTPHeaderField: "Host")
+        request.setValue("TextTranslate", forHTTPHeaderField: "X-TC-Action")
+        request.setValue("2018-03-21", forHTTPHeaderField: "X-TC-Version")
+        request.setValue("ap-guangzhou", forHTTPHeaderField: "X-TC-Region")
+        request.setValue(String(timestamp), forHTTPHeaderField: "X-TC-Timestamp")
+        request.setValue(
+            "TC3-HMAC-SHA256 Credential=\(secretId)/\(credentialScope), SignedHeaders=content-type;host, Signature=\(signature)",
+            forHTTPHeaderField: "Authorization"
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try throwIfNeeded(response, data)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if let error = (json?["Response"] as? [String: Any])?["Error"] as? [String: Any],
+           let message = error["Message"] as? String {
+            throw TranslatorError.http(400, message)
+        }
+        let target = ((json?["Response"] as? [String: Any])?["TargetText"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let target, !target.isEmpty else { throw TranslatorError.decode }
+        return target
+    }
+
+    private func tencentCode(_ id: String) -> String {
+        switch id {
+        case "auto": return "auto"
+        case "zh-Hans": return "zh"
+        case "zh-Hant": return "zh-TW"
+        default: return id
+        }
+    }
+
+    private func tencentDate(_ timestamp: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
+    }
+
+    private func hmac(_ key: String, _ message: String) -> Data {
+        hmac(Data(key.utf8), message)
+    }
+
+    private func hmac(_ key: Data, _ message: String) -> Data {
+        let mac = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: key))
+        return Data(mac)
+    }
+
+    private func hmacHex(_ key: Data, _ message: String) -> String {
+        hmac(key, message).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 struct DeepLTranslator: Translator {
     func translate(_ text: String, settings: AppSettings) async throws -> String {
         let key = settings.deeplAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -188,19 +297,25 @@ struct DeepLTranslator: Translator {
 
 struct OpenAITranslator: Translator {
     func translate(_ text: String, settings: AppSettings) async throws -> String {
+        try await translate(text, settings: settings, onPartial: nil)
+    }
+
+    func translate(
+        _ text: String,
+        settings: AppSettings,
+        onPartial: (@Sendable (String) -> Void)?
+    ) async throws -> String {
         let key = settings.openaiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = OpenAIEndpoint.normalizedBase(settings.openaiBaseURL)
         let model = settings.openaiModel.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, !base.isEmpty, !model.isEmpty else { throw TranslatorError.notConfigured }
-
         let target = LanguageOption.targets.first(where: { $0.id == settings.targetLanguage })?.title
             ?? settings.targetLanguage
         let prompt = settings.openaiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? AppSettings.defaultPrompt
             : settings.openaiPrompt
         let user = "目标语言：\(target)\n\n\(text)"
-        let maxTokens = min(max(settings.openaiMaxTokens, 64), 1024)
-
+        let maxTokens = min(max(settings.openaiMaxTokens, 64), 2048)
         switch settings.openaiAPIMode {
         case .chat:
             return try await chatCompletions(
@@ -209,7 +324,8 @@ struct OpenAITranslator: Translator {
                 model: model,
                 prompt: prompt,
                 user: user,
-                maxTokens: maxTokens
+                maxTokens: maxTokens,
+                onPartial: onPartial
             )
         case .responses:
             return try await responses(
@@ -229,36 +345,59 @@ struct OpenAITranslator: Translator {
         model: String,
         prompt: String,
         user: String,
-        maxTokens: Int
+        maxTokens: Int,
+        onPartial: (@Sendable (String) -> Void)?
     ) async throws -> String {
         let url = OpenAIEndpoint.url(base: base, path: "/chat/completions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 18
+        request.timeoutInterval = 45
         let payload: [String: Any] = [
             "model": model,
             "temperature": 0,
             "max_tokens": maxTokens,
+            "stream": true,
             "messages": [
                 ["role": "system", "content": prompt],
                 ["role": "user", "content": user]
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try throwIfNeeded(response, data)
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let choices = json?["choices"] as? [[String: Any]]
-        let message = choices?.first?["message"] as? [String: Any]
-        if let content = flattenContent(message?["content"]) {
-            return content
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            var data = Data()
+            for try await chunk in bytes {
+                data.append(chunk)
+            }
+            try throwIfNeeded(response, data)
         }
-        if let text = choices?.first?["text"] as? String {
-            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var assembled = ""
+        var lastEmit = Date.distantPast
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("data:") else { continue }
+            let payload = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { break }
+            guard let data = payload.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+            let delta = ((json["choices"] as? [[String: Any]])?.first?["delta"] as? [String: Any])
+            if let piece = flattenContent(delta?["content"]) {
+                assembled += piece
+                let now = Date()
+                if now.timeIntervalSince(lastEmit) > 0.08 {
+                    lastEmit = now
+                    onPartial?(assembled)
+                }
+            }
         }
-        throw TranslatorError.decode
+        let result = assembled.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result.isEmpty { throw TranslatorError.decode }
+        onPartial?(result)
+        return result
     }
 
     private func responses(
@@ -274,7 +413,7 @@ struct OpenAITranslator: Translator {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 18
+        request.timeoutInterval = 45
         let payload: [String: Any] = [
             "model": model,
             "temperature": 0,
