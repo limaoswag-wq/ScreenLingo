@@ -13,6 +13,7 @@ struct AppSettings: Codable, Equatable {
     var captureInterval: Double = 0.6
     var captionFontSize: CaptionFontSize = .medium
     var captionWindowSize: CaptionWindowSize = .medium
+    var appearanceStyle: AppearanceStyle = .frosted
 
     var googleAPIKey: String = ""
     var baiduAppID: String = ""
@@ -33,7 +34,7 @@ struct AppSettings: Codable, Equatable {
         case recognitionMode, translateScene, ocrEngine, translator
         case sourceLanguage, targetLanguage, customRegion
         case showSourceText, showRuby, captureInterval
-        case captionFontSize, captionWindowSize
+        case captionFontSize, captionWindowSize, appearanceStyle
         case googleAPIKey, baiduAppID, baiduSecret, deeplAPIKey
         case openaiBaseURL, openaiAPIKey, openaiModel, openaiAPIMode
         case openaiMaxTokens, openaiPrompt
@@ -56,6 +57,7 @@ struct AppSettings: Codable, Equatable {
         captureInterval = try c.decodeIfPresent(Double.self, forKey: .captureInterval) ?? 0.6
         captionFontSize = try c.decodeIfPresent(CaptionFontSize.self, forKey: .captionFontSize) ?? .medium
         captionWindowSize = try c.decodeIfPresent(CaptionWindowSize.self, forKey: .captionWindowSize) ?? .medium
+        appearanceStyle = try c.decodeIfPresent(AppearanceStyle.self, forKey: .appearanceStyle) ?? .frosted
         googleAPIKey = try c.decodeIfPresent(String.self, forKey: .googleAPIKey) ?? ""
         baiduAppID = try c.decodeIfPresent(String.self, forKey: .baiduAppID) ?? ""
         baiduSecret = try c.decodeIfPresent(String.self, forKey: .baiduSecret) ?? ""
@@ -82,6 +84,7 @@ struct AppSettings: Codable, Equatable {
         try c.encode(captureInterval, forKey: .captureInterval)
         try c.encode(captionFontSize, forKey: .captionFontSize)
         try c.encode(captionWindowSize, forKey: .captionWindowSize)
+        try c.encode(appearanceStyle, forKey: .appearanceStyle)
         try c.encode(googleAPIKey, forKey: .googleAPIKey)
         try c.encode(baiduAppID, forKey: .baiduAppID)
         try c.encode(baiduSecret, forKey: .baiduSecret)

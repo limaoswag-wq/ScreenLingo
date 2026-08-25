@@ -143,6 +143,20 @@ enum CaptionFontSize: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum AppearanceStyle: String, Codable, CaseIterable, Identifiable {
+    case frosted
+    case solid
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .frosted: return "磨砂玻璃"
+        case .solid: return "纯色"
+        }
+    }
+}
+
 enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
     case small
     case medium

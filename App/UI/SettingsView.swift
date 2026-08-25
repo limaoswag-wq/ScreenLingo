@@ -40,6 +40,11 @@ struct SettingsView: View {
             }
 
             Section("UI") {
+                Picker("外观质感", selection: $session.settings.appearanceStyle) {
+                    ForEach(AppearanceStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
                 Toggle("只显示翻译结果", isOn: Binding(
                     get: { !session.settings.showSourceText },
                     set: { session.settings.showSourceText = !$0 }

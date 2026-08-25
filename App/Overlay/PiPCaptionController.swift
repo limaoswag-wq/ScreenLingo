@@ -80,39 +80,79 @@ final class PiPCaptionController: NSObject {
             UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1).setFill()
             ctx.fill(rect)
 
-            let inset = rect.insetBy(dx: 28, dy: 22)
-            var y = inset.minY
+            let inset = rect.insetBy(dx: 28, dy: 18)
             if let lastError, !lastError.isEmpty {
-                drawText(lastError, font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium), color: .systemOrange, in: inset, y: &y)
-            } else {
-                if !lastSource.isEmpty {
-                    drawText(lastSource, font: .systemFont(ofSize: fontSize.sourcePoints, weight: .regular), color: UIColor(white: 0.72, alpha: 1), in: inset, y: &y)
-                    y += 8
-                }
-                drawText(
-                    lastTranslated.isEmpty ? "…" : lastTranslated,
-                    font: .systemFont(ofSize: fontSize.translatedPoints, weight: .semibold),
-                    color: .white,
-                    in: inset,
-                    y: &y
+                drawCentered(
+                    lastError,
+                    font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium),
+                    color: .systemOrange,
+                    in: inset
                 )
+            } else {
+                let source = lastSource
+                let translated = lastTranslated
+                if source.isEmpty && translated.isEmpty {
+                    drawCentered("切换到其他 App 开始翻译", font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium), color: UIColor(white: 0.78, alpha: 1), in: inset)
+                } else if source.isEmpty {
+                    drawCentered(translated, font: .systemFont(ofSize: fontSize.translatedPoints, weight: .semibold), color: UIColor(red: 0.55, green: 0.92, blue: 0.95, alpha: 1), in: inset)
+                } else {
+                    let gap: CGFloat = 10
+                    let sourceFont = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .regular)
+                    let transFont = UIFont.systemFont(ofSize: fontSize.translatedPoints, weight: .semibold)
+                    let sourceHeight = height(of: source, font: sourceFont, width: inset.width)
+                    let transHeight = height(of: translated.isEmpty ? "翻译中…" : translated, font: transFont, width: inset.width)
+                    let total = sourceHeight + gap + transHeight
+                    var y = inset.midY - total / 2
+                    drawCentered(source, font: sourceFont, color: .white, in: CGRect(x: inset.minX, y: y, width: inset.width, height: sourceHeight))
+                    y += sourceHeight + gap
+                    let lineY = y - gap / 2
+                    UIColor(white: 1, alpha: 0.18).setStroke()
+                    let line = UIBezierPath()
+                    line.move(to: CGPoint(x: inset.minX + 24, y: lineY))
+                    line.addLine(to: CGPoint(x: inset.maxX - 24, y: lineY))
+                    line.lineWidth = 1
+                    line.stroke()
+                    drawCentered(
+                        translated.isEmpty ? "翻译中…" : translated,
+                        font: transFont,
+                        color: translated.isEmpty ? UIColor(white: 0.72, alpha: 1) : UIColor(red: 0.55, green: 0.92, blue: 0.95, alpha: 1),
+                        in: CGRect(x: inset.minX, y: y, width: inset.width, height: transHeight)
+                    )
+                }
             }
         }
         return sampleBuffer(from: image)
     }
 
-    private func drawText(_ text: String, font: UIFont, color: UIColor, in inset: CGRect, y: inout CGFloat) {
+    private func drawCentered(_ text: String, font: UIFont, color: UIColor, in rect: CGRect) {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
         let attr = NSAttributedString(string: text, attributes: [
             .font: font,
             .foregroundColor: color,
             .paragraphStyle: paragraph
         ])
-        let remaining = CGRect(x: inset.minX, y: y, width: inset.width, height: max(24, inset.maxY - y))
-        let bound = attr.boundingRect(with: remaining.size, options: [.usesLineFragmentOrigin], context: nil)
-        attr.draw(with: remaining, options: [.usesLineFragmentOrigin], context: nil)
-        y += ceil(bound.height)
+        let bound = attr.boundingRect(with: rect.size, options: [.usesLineFragmentOrigin], context: nil)
+        let drawRect = CGRect(
+            x: rect.minX,
+            y: rect.minY + max(0, (rect.height - ceil(bound.height)) / 2),
+            width: rect.width,
+            height: min(rect.height, ceil(bound.height))
+        )
+        attr.draw(with: drawRect, options: [.usesLineFragmentOrigin], context: nil)
+    }
+
+    private func height(of text: String, font: UIFont, width: CGFloat) -> CGFloat {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
+        let attr = NSAttributedString(string: text, attributes: [
+            .font: font,
+            .paragraphStyle: paragraph
+        ])
+        let bound = attr.boundingRect(with: CGSize(width: width, height: 400), options: [.usesLineFragmentOrigin], context: nil)
+        return max(24, ceil(bound.height))
     }
 
     private func sampleBuffer(from image: UIImage) -> CMSampleBuffer? {
