@@ -4,7 +4,7 @@ import UIKit
 struct SettingsView: View {
     @ObservedObject var session: TranslationSessionController
     @State private var showRegionEditor = false
-    @State private var showManualModel = false
+    @State private var credentialKind: TranslatorKind?
 
     var body: some View {
         Form {
@@ -33,8 +33,6 @@ struct SettingsView: View {
                         .font(.footnote)
                 }
             }
-
-            credentialsSection
 
             Section("识别") {
                 Picker("OCR", selection: $session.settings.ocrEngine) {
@@ -77,7 +75,7 @@ struct SettingsView: View {
             }
 
             Section("说明") {
-                Text("直播扩展只负责抓屏。滑动时会丢掉未完成的识别和翻译。自定义 AI 使用流式输出。VPS 本地包无审查、比大模型快。Apple 翻译需要 iOS 18。")
+                Text("直播扩展只负责抓屏。滑动时会丢掉未完成的识别和翻译。自定义 AI 使用流式输出。点翻译源名称打开密钥卡片，只有保存才会写入。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -85,6 +83,9 @@ struct SettingsView: View {
         .navigationTitle("设置")
         .sheet(isPresented: $showRegionEditor) {
             RegionEditorView(region: $session.settings.customRegion)
+        }
+        .sheet(item: $credentialKind) { kind in
+            CredentialSheet(kind: kind, session: session)
         }
     }
 
@@ -98,14 +99,18 @@ struct SettingsView: View {
                     .font(.title3)
             }
             .buttonStyle(.plain)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(kind.title)
-                if kind == .apple {
-                    Text("需要 iOS 18")
+            Button {
+                credentialKind = kind
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(kind.title)
+                        .foregroundStyle(.primary)
+                    Text(session.settings.translatorIsConfigured(kind) ? "已保存密钥" : "点这里填写密钥")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(session.settings.translatorIsConfigured(kind) ? .secondary : .orange)
                 }
             }
+            .buttonStyle(.plain)
             Spacer()
             Menu {
                 ForEach(HexColor.presets, id: \.hex) { preset in
@@ -121,116 +126,227 @@ struct SettingsView: View {
             }
         }
     }
+}
+
+private struct CredentialSheet: View {
+    let kind: TranslatorKind
+    @ObservedObject var session: TranslationSessionController
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var apiID = ""
+    @State private var apiKey = ""
+    @State private var openaiMode: OpenAIAPIMode = .chat
+    @State private var openaiModel = ""
+    @State private var openaiMaxTokens = 512
+    @State private var openaiPrompt = ""
+    @State private var showManualModel = false
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(kind.title)
+                            .font(.title3.weight(.semibold))
+                        Text(hint)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        fieldCard(title: idLabel, hint: "API ID", text: $apiID, secret: false)
+                        fieldCard(title: keyLabel, hint: "API Key", text: $apiKey, secret: true)
+
+                        if kind == .openai {
+                            openaiExtras
+                        }
+                    }
+                    .padding(20)
+                }
+                Divider()
+                HStack(spacing: 12) {
+                    Button("取消") { dismiss() }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.tertiarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    Button("保存") { save(); dismiss() }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .foregroundStyle(.white)
+                        .background(Color.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .padding(16)
+            }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save(); dismiss() }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .onAppear(perform: load)
+    }
 
     @ViewBuilder
-    private var credentialsSection: some View {
-        if session.settings.isEnabled(.baidu) {
-            Section("百度") {
-                TextField("百度 App ID", text: $session.settings.baiduAppID)
-                    .autocapitalization(.none)
-                SecureField("百度密钥", text: $session.settings.baiduSecret)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
+    private var openaiExtras: some View {
+        Picker("请求接口", selection: $openaiMode) {
+            ForEach(OpenAIAPIMode.allCases) { mode in
+                Text(mode.title).tag(mode)
             }
         }
-        if session.settings.isEnabled(.tencent) {
-            Section("腾讯云翻译") {
-                TextField("SecretId", text: $session.settings.tencentSecretId)
+        .pickerStyle(.segmented)
+        Text("Chat Completions 使用流式输出，避免上游 499。")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        if session.availableModels.isEmpty || showManualModel {
+            fieldCard(title: "模型名", hint: "Model", text: $openaiModel, secret: false)
+        } else {
+            Picker("模型", selection: $openaiModel) {
+                ForEach(session.availableModels, id: \.self) { model in
+                    Text(model).tag(model)
+                }
+            }
+        }
+        Button {
+            Task {
+                await session.refreshModels(baseURL: apiID, apiKey: apiKey)
+                if !session.availableModels.contains(openaiModel), let first = session.availableModels.first {
+                    openaiModel = first
+                }
+            }
+        } label: {
+            if session.isLoadingModels {
+                HStack {
+                    ProgressView()
+                    Text("正在获取模型列表")
+                }
+            } else {
+                Text("从上游获取模型列表")
+            }
+        }
+        .disabled(session.isLoadingModels || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if let message = session.modelListMessage {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        Toggle("手动输入模型名", isOn: $showManualModel)
+        Stepper(value: $openaiMaxTokens, in: 128...2048, step: 64) {
+            Text("最大输出 \(openaiMaxTokens) tokens")
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            Text("提示词")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextEditor(text: $openaiPrompt)
+                .frame(minHeight: 90)
+                .padding(8)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func fieldCard(title: String, hint: String, text: Binding<String>, secret: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if secret {
+                SecureField(title, text: text)
+                    .textContentType(.password)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
-                SecureField("SecretKey", text: $session.settings.tencentSecretKey)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
-            }
-        }
-        if session.settings.isEnabled(.google) {
-            Section("Google") {
-                SecureField("Google API Key", text: $session.settings.googleAPIKey)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
-            }
-        }
-        if session.settings.isEnabled(.deepl) {
-            Section("DeepL") {
-                SecureField("DeepL API Key", text: $session.settings.deeplAPIKey)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
-            }
-        }
-        if session.settings.isEnabled(.vps) {
-            Section("VPS 本地包") {
-                TextField("服务地址", text: $session.settings.vpsBaseURL)
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
+                    .padding(12)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                TextField(title, text: text)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
-                SecureField("API Key", text: $session.settings.vpsAPIKey)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
-                Text("走日本 VPS 上的 LibreTranslate，无内容审查。适合日/英/韩 → 中。默认地址 grok2api.vlimi.com/lt。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .padding(12)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            Text(hint)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        if session.settings.isEnabled(.openai) {
-            Section("自定义 AI") {
-                TextField("API 地址", text: $session.settings.openaiBaseURL)
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                SecureField("API Key", text: $session.settings.openaiAPIKey)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
-                Picker("请求接口", selection: $session.settings.openaiAPIMode) {
-                    ForEach(OpenAIAPIMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                Text("Chat Completions 使用流式输出，避免上游 499。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if session.availableModels.isEmpty {
-                    TextField("模型名", text: $session.settings.openaiModel)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                } else {
-                    Picker("模型", selection: $session.settings.openaiModel) {
-                        ForEach(session.availableModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
-                    }
-                }
-                Button {
-                    Task { await session.refreshModels() }
-                } label: {
-                    if session.isLoadingModels {
-                        HStack {
-                            ProgressView()
-                            Text("正在获取模型列表")
-                        }
-                    } else {
-                        Text("从上游获取模型列表")
-                    }
-                }
-                .disabled(session.isLoadingModels || session.settings.openaiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if let message = session.modelListMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Toggle("手动输入模型名", isOn: $showManualModel)
-                if showManualModel {
-                    TextField("模型名", text: $session.settings.openaiModel)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                }
-                Stepper(value: $session.settings.openaiMaxTokens, in: 128...2048, step: 64) {
-                    Text("最大输出 \(session.settings.openaiMaxTokens) tokens")
-                }
-                TextEditor(text: $session.settings.openaiPrompt)
-                    .frame(minHeight: 90)
-            }
+    }
+
+    private var idLabel: String {
+        switch kind {
+        case .baidu: return "百度 App ID"
+        case .tencent: return "腾讯 SecretId"
+        case .openai: return "API 地址"
+        default: return "API ID"
+        }
+    }
+
+    private var keyLabel: String {
+        switch kind {
+        case .baidu: return "百度密钥"
+        case .tencent: return "腾讯 SecretKey"
+        case .openai: return "API Key"
+        default: return "API Key"
+        }
+    }
+
+    private var hint: String {
+        switch kind {
+        case .baidu:
+            return "开放平台用 APP ID + 密钥；如果这是智能云的 API Key，保存后会自动改走智能云接口。"
+        case .tencent:
+            return "腾讯云机器翻译的 SecretId 和 SecretKey。"
+        case .openai:
+            return "自定义 AI 的接口地址和密钥。点保存后才会写入，取消不改动。"
+        default:
+            return "点保存后才会写入，取消不改动。"
+        }
+    }
+
+    private func load() {
+        switch kind {
+        case .baidu:
+            apiID = session.settings.baiduAppID
+            apiKey = session.settings.baiduSecret
+        case .tencent:
+            apiID = session.settings.tencentSecretId
+            apiKey = session.settings.tencentSecretKey
+        case .openai:
+            apiID = session.settings.openaiBaseURL
+            apiKey = session.settings.openaiAPIKey
+            openaiMode = session.settings.openaiAPIMode
+            openaiModel = session.settings.openaiModel
+            openaiMaxTokens = session.settings.openaiMaxTokens
+            openaiPrompt = session.settings.openaiPrompt
+        default:
+            break
+        }
+    }
+
+    private func save() {
+        switch kind {
+        case .baidu:
+            session.settings.baiduAppID = apiID.trimmingCharacters(in: .whitespacesAndNewlines)
+            session.settings.baiduSecret = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .tencent:
+            session.settings.tencentSecretId = apiID.trimmingCharacters(in: .whitespacesAndNewlines)
+            session.settings.tencentSecretKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .openai:
+            session.settings.openaiBaseURL = apiID.trimmingCharacters(in: .whitespacesAndNewlines)
+            session.settings.openaiAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            session.settings.openaiAPIMode = openaiMode
+            session.settings.openaiModel = openaiModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            session.settings.openaiMaxTokens = openaiMaxTokens
+            session.settings.openaiPrompt = openaiPrompt
+        default:
+            break
+        }
+        if !session.settings.isEnabled(kind) {
+            session.settings.toggleTranslator(kind)
         }
     }
 }

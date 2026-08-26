@@ -125,20 +125,16 @@ final class TranslationSessionController: ObservableObject {
         await process(image: image, force: true)
     }
 
-    func refreshModels() async {
-        guard settings.translator == .openai || settings.isEnabled(.openai) else { return }
+    func refreshModels(baseURL: String? = nil, apiKey: String? = nil) async {
         isLoadingModels = true
         modelListMessage = nil
         defer { isLoadingModels = false }
         do {
             let models = try await OpenAIModelCatalog.fetch(
-                baseURL: settings.openaiBaseURL,
-                apiKey: settings.openaiAPIKey
+                baseURL: baseURL ?? settings.openaiBaseURL,
+                apiKey: apiKey ?? settings.openaiAPIKey
             )
             availableModels = models
-            if !models.contains(settings.openaiModel), let first = models.first {
-                settings.openaiModel = first
-            }
             modelListMessage = "已获取 \(models.count) 个模型"
         } catch {
             modelListMessage = error.localizedDescription

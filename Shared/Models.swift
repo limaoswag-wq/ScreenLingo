@@ -106,10 +106,15 @@ enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var selectable: Bool { self != .apple }
+    var selectable: Bool {
+        switch self {
+        case .baidu, .tencent, .openai: return true
+        default: return false
+        }
+    }
 
     static var selectableCases: [TranslatorKind] {
-        allCases.filter(\.selectable)
+        [.baidu, .tencent, .openai]
     }
 
     var defaultHex: String {

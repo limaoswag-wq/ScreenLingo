@@ -51,7 +51,7 @@ enum TranslatorFactory {
         case .deepl: return DeepLTranslator()
         case .openai: return OpenAITranslator()
         case .tencent: return TencentTranslator()
-        case .vps: return VPSTranslator()
+        case .vps: return AppleTranslator()
         }
     }
 }
@@ -145,11 +145,55 @@ struct BaiduTranslator: Translator {
         try throwIfNeeded(response, data)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         if let code = baiduErrorCode(json), code != "52000" {
+            if code == "52003" {
+                return try await translateCloud(text, appID: appID, secret: secret, settings: settings)
+            }
             throw TranslatorError.http(Int(code) ?? 400, baiduErrorMessage(code, json?["error_msg"] as? String))
         }
         let results = json?["trans_result"] as? [[String: Any]]
         let joined = results?.compactMap { $0["dst"] as? String }.joined(separator: "\n")
         guard let joined, !joined.isEmpty else { throw TranslatorError.decode }
+        return joined
+    }
+
+    /// 开放平台 52003 时改走百度智能云机器翻译（API Key + Secret Key）。
+    private func translateCloud(_ text: String, appID: String, secret: String, settings: AppSettings) async throws -> String {
+        var tokenRequest = URLRequest(url: URL(string: "https://aip.baidubce.com/oauth/2.0/token")!)
+        tokenRequest.httpMethod = "POST"
+        tokenRequest.timeoutInterval = 12
+        tokenRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        tokenRequest.httpBody = formBody([
+            ("grant_type", "client_credentials"),
+            ("client_id", appID),
+            ("client_secret", secret)
+        ])
+        let (tokenData, tokenResponse) = try await URLSession.shared.data(for: tokenRequest)
+        try throwIfNeeded(tokenResponse, tokenData)
+        let tokenJSON = try JSONSerialization.jsonObject(with: tokenData) as? [String: Any]
+        guard let token = tokenJSON?["access_token"] as? String, !token.isEmpty else {
+            let err = (tokenJSON?["error_description"] as? String) ?? (tokenJSON?["error"] as? String)
+            throw TranslatorError.http(52003, baiduErrorMessage("52003", err ?? "UNAUTHORIZED USER"))
+        }
+        var request = URLRequest(url: URL(string: "https://aip.baidubce.com/rpc/2.0/mt/texttrans/v1?access_token=\(token)")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 12
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "from": baiduCode(settings.sourceLanguage),
+            "to": baiduCode(settings.targetLanguage),
+            "q": text
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try throwIfNeeded(response, data)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if let error = json?["error_msg"] as? String, !error.isEmpty {
+            throw TranslatorError.http((json?["error_code"] as? Int) ?? 400, error)
+        }
+        let results = ((json?["result"] as? [String: Any])?["trans_result"] as? [[String: Any]])
+        let joined = results?.compactMap { $0["dst"] as? String }.joined(separator: "\n")
+        guard let joined, !joined.isEmpty else {
+            throw TranslatorError.http(52003, baiduErrorMessage("52003", "UNAUTHORIZED USER"))
+        }
         return joined
     }
 
@@ -178,7 +222,7 @@ struct BaiduTranslator: Translator {
         switch code {
         case "52001": mapped = "请求超时"
         case "52002": mapped = "系统错误"
-        case "52003": mapped = "未授权，检查 App ID / 密钥，或通用翻译未开通"
+        case "52003": mapped = "未授权。开放平台要开通「通用文本翻译」；若这是智能云的 API Key，已自动改走智能云接口"
         case "54000": mapped = "必填参数为空"
         case "54001": mapped = "签名错误，检查密钥是否贴对"
         case "54003": mapped = "访问频率超限，免费版大约 1 次/秒"
@@ -285,48 +329,6 @@ struct TencentTranslator: Translator {
 
     private func hmacHex(_ key: Data, _ message: String) -> String {
         hmacData(key, message).map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-struct VPSTranslator: Translator {
-    func translate(_ text: String, settings: AppSettings) async throws -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw TranslatorError.empty }
-        let key = settings.vpsAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        var base = settings.vpsBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while base.hasSuffix("/") { base.removeLast() }
-        guard !base.isEmpty, !key.isEmpty else { throw TranslatorError.notConfigured }
-        guard let url = URL(string: base + "/translate") else { throw TranslatorError.notConfigured }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 12
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let payload: [String: Any] = [
-            "q": trimmed,
-            "source": vpsCode(settings.sourceLanguage),
-            "target": vpsCode(settings.targetLanguage),
-            "format": "text",
-            "api_key": key
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try throwIfNeeded(response, data)
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if let error = json?["error"] as? String, !error.isEmpty {
-            throw TranslatorError.http(400, error)
-        }
-        let translated = (json?["translatedText"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let translated, !translated.isEmpty else { throw TranslatorError.decode }
-        return translated
-    }
-
-    private func vpsCode(_ id: String) -> String {
-        switch id {
-        case "auto": return "auto"
-        case "zh-Hans", "zh-Hant": return "zh"
-        default: return id
-        }
     }
 }
 
