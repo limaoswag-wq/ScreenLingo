@@ -10,3 +10,5 @@ xcuserdata/
 *.hmap
 *.ipa
 .idea/
+Pods/
+Podfile.lock

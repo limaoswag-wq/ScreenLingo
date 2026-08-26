@@ -99,13 +99,13 @@ struct BroadcastStartButton: View {
 
     var body: some View {
         ZStack {
-            Text(title)
+            Label(title, systemImage: "play.circle.fill")
                 .font(.headline)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color(red: 0.11, green: 0.11, blue: 0.12))
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
+                .padding(.vertical, 15)
+                .background(Color(red: 0.23, green: 0.51, blue: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .allowsHitTesting(false)
             BroadcastPicker()
                 .opacity(0.02)

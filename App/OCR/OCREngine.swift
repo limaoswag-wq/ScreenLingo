@@ -11,7 +11,17 @@ struct OCREngine {
         let cropRect = cropRect(in: CGSize(width: image.width, height: image.height), settings: settings)
         let fullSize = CGSize(width: image.width, height: image.height)
         let languages = ocrLanguages(settings: settings)
-        let accurate = settings.translateScene == .manga || settings.ocrEngine == .visionAccurate
+        let useMLKit = settings.ocrEngine == .mlkit
+        if useMLKit, let mlkit = MLKitOCR.recognize(
+            image: cropped,
+            layout: settings.mangaLayout,
+            cropRect: cropRect,
+            fullSize: fullSize
+        ), !mlkit.isEmpty {
+            return mlkit.filter { $0.confidence >= 0.20 }
+        }
+
+        let accurate = settings.translateScene == .manga || settings.ocrEngine == .visionAccurate || useMLKit
         let minHeight: Float = settings.translateScene == .manga ? 0.010 : (accurate ? 0.018 : 0.028)
 
         var boxes = try recognizePass(
@@ -22,7 +32,7 @@ struct OCREngine {
             cropRect: cropRect,
             fullSize: fullSize
         )
-        if settings.translateScene == .manga, settings.mangaLayout == .japanese {
+        if settings.translateScene == .manga, settings.mangaLayout == .japanese, settings.ocrEngine != .mlkit {
             boxes = rereadVerticalBubbles(in: image, boxes: boxes, languages: languages)
         }
         let minConfidence: Float = settings.translateScene == .manga ? 0.30 : 0.12

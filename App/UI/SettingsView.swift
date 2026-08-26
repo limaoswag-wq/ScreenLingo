@@ -40,6 +40,9 @@ struct SettingsView: View {
                         Text(engine.title).tag(engine)
                     }
                 }
+                Text(session.settings.ocrEngine.subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 Picker("翻译区域", selection: $session.settings.recognitionMode) {
                     ForEach(RecognitionMode.allCases) { mode in
                         Text(mode.title).tag(mode)

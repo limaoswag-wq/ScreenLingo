@@ -28,6 +28,7 @@ app_files = [
     ("Theme.swift", "App/UI/Theme.swift"),
     ("TranslationSessionController.swift", "App/Session/TranslationSessionController.swift"),
     ("OCREngine.swift", "App/OCR/OCREngine.swift"),
+    ("MLKitOCR.swift", "App/OCR/MLKitOCR.swift"),
     ("Translator.swift", "App/Translation/Translator.swift"),
     ("PiPCaptionController.swift", "App/Overlay/PiPCaptionController.swift"),
     ("CaptionBoardView.swift", "App/Overlay/CaptionBoardView.swift"),

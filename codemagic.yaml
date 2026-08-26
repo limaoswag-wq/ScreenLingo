@@ -6,23 +6,42 @@ workflows:
     environment:
       vars:
         XCODE_SCHEME: ScreenLingo
+        XCODE_WORKSPACE: ScreenLingo.xcworkspace
         XCODE_PROJECT: ScreenLingo.xcodeproj
       xcode: latest
     scripts:
+      - name: Install CocoaPods
+        script: |
+          set -euo pipefail
+          pod install --repo-update
       - name: Build unsigned iOS app
         script: |
           set -euo pipefail
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            IPHONEOS_DEPLOYMENT_TARGET=16.0 \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+          if [[ -d "$XCODE_WORKSPACE" ]]; then
+            xcodebuild \
+              -workspace "$XCODE_WORKSPACE" \
+              -scheme "$XCODE_SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              IPHONEOS_DEPLOYMENT_TARGET=16.0 \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              DEVELOPMENT_TEAM=""
+          else
+            xcodebuild \
+              -project "$XCODE_PROJECT" \
+              -scheme "$XCODE_SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              IPHONEOS_DEPLOYMENT_TARGET=16.0 \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              DEVELOPMENT_TEAM=""
+          fi
       - name: Package IPA
         script: |
           set -euo pipefail

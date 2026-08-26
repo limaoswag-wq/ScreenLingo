@@ -100,13 +100,23 @@ enum TranslateScene: String, Codable, CaseIterable, Identifiable {
 enum OCREngineKind: String, Codable, CaseIterable, Identifiable {
     case visionAccurate
     case visionFast
+    case mlkit
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .visionAccurate: return "高精度"
-        case .visionFast: return "快速"
+        case .visionAccurate: return "Apple 高精度"
+        case .visionFast: return "Apple 快速"
+        case .mlkit: return "ML Kit 竖排"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .visionAccurate: return "系统 Vision，横排更稳"
+        case .visionFast: return "系统 Vision，更快"
+        case .mlkit: return "本机日韩中模型，竖排更好"
         }
     }
 }
@@ -292,15 +302,15 @@ struct LanguageOption: Identifiable, Hashable {
     static let auto = LanguageOption(id: "auto", title: "自动")
     static let zhHans = LanguageOption(id: "zh-Hans", title: "简体中文")
     static let zhHant = LanguageOption(id: "zh-Hant", title: "繁体中文")
-    static let en = LanguageOption(id: "en", title: "English")
-    static let ja = LanguageOption(id: "ja", title: "日本語")
-    static let ko = LanguageOption(id: "ko", title: "한국어")
-    static let fr = LanguageOption(id: "fr", title: "Français")
-    static let de = LanguageOption(id: "de", title: "Deutsch")
-    static let es = LanguageOption(id: "es", title: "Español")
-    static let ru = LanguageOption(id: "ru", title: "Русский")
-    static let vi = LanguageOption(id: "vi", title: "Tiếng Việt")
-    static let th = LanguageOption(id: "th", title: "ไทย")
+    static let en = LanguageOption(id: "en", title: "英语")
+    static let ja = LanguageOption(id: "ja", title: "日语")
+    static let ko = LanguageOption(id: "ko", title: "韩语")
+    static let fr = LanguageOption(id: "fr", title: "法语")
+    static let de = LanguageOption(id: "de", title: "德语")
+    static let es = LanguageOption(id: "es", title: "西班牙语")
+    static let ru = LanguageOption(id: "ru", title: "俄语")
+    static let vi = LanguageOption(id: "vi", title: "越南语")
+    static let th = LanguageOption(id: "th", title: "泰语")
 
     static let sources: [LanguageOption] = [
         .auto, .ja, .en, .ko, .zhHans, .zhHant, .fr, .de, .es, .ru, .vi, .th

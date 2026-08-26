@@ -53,12 +53,25 @@ APPEX="$APP_STAGE/PlugIns/Broadcast.appex"
 rm -rf "$APP_STAGE/_CodeSignature" || true
 rm -rf "$APPEX/_CodeSignature" || true
 
-cp "$ROOT/App/ScreenLingo.entitlements" "$APP_STAGE/ScreenLingo.entitlements"
-if [[ -d "$APPEX" ]]; then
-  cp "$ROOT/Broadcast/Broadcast.entitlements" "$APPEX/Broadcast.entitlements"
-  ldid -S"$ROOT/Broadcast/Broadcast.entitlements" "$APPEX/Broadcast"
-fi
-ldid -S"$ROOT/App/ScreenLingo.entitlements" "$APP_STAGE/ScreenLingo"
+	cp "$ROOT/App/ScreenLingo.entitlements" "$APP_STAGE/ScreenLingo.entitlements"
+	if [[ -d "$APPEX" ]]; then
+	  cp "$ROOT/Broadcast/Broadcast.entitlements" "$APPEX/Broadcast.entitlements"
+	  ldid -S"$ROOT/Broadcast/Broadcast.entitlements" "$APPEX/Broadcast"
+	fi
+	if [[ -d "$APP_STAGE/Frameworks" ]]; then
+	  find "$APP_STAGE/Frameworks" -type f \( -name '*.dylib' -o -perm -111 \) -print0 | while IFS= read -r -d '' bin; do
+	    rm -rf "$(dirname "$bin")/_CodeSignature" || true
+	    ldid -S "$bin" || true
+	  done
+	  find "$APP_STAGE/Frameworks" -name '*.framework' -type d -print0 | while IFS= read -r -d '' fw; do
+	    name="$(basename "$fw" .framework)"
+	    if [[ -f "$fw/$name" ]]; then
+	      rm -rf "$fw/_CodeSignature" || true
+	      ldid -S "$fw/$name" || true
+	    fi
+	  done
+	fi
+	ldid -S"$ROOT/App/ScreenLingo.entitlements" "$APP_STAGE/ScreenLingo"
 
 rm -f "$OUT"
 (cd "$STAGE" && zip -qry "$OUT" Payload)

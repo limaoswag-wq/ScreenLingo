@@ -17,13 +17,14 @@ struct HomeView: View {
                 canvas.ignoresSafeArea()
                 palette.wash.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        hero
+                    VStack(alignment: .leading, spacing: 14) {
+                        welcome
                         languageCard
-                        areaCard
+                        modeCard
+                        translatorCard
+                        ocrCard
                         startCard
                         resultCard
-                        sceneCard
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
@@ -80,11 +81,17 @@ struct HomeView: View {
     }
 
     private var canvas: Color {
-        colorScheme == .dark ? palette.canvasDark : palette.canvasLight
+        colorScheme == .dark ? palette.canvasDark : Color(red: 0.97, green: 0.97, blue: 0.98)
     }
 
-    private var hero: some View {
+    private var welcome: some View {
         VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "leaf.fill")
+                    .foregroundStyle(Color(red: 0.23, green: 0.51, blue: 1))
+                Text("欢迎使用屏译")
+                    .font(.title2.weight(.bold))
+            }
             HStack {
                 StatusBadge(
                     broadcasting: session.isBroadcasting,
@@ -97,74 +104,96 @@ struct HomeView: View {
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
+                        .background(Color.white)
                         .clipShape(Capsule())
                 }
             }
             Text(session.statusLine)
-                .font(.title3.weight(.semibold))
-            if !session.overlayHint.isEmpty {
-                Text(session.overlayHint)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
-        .animation(AppTheme.ease, value: session.statusLine)
-        .animation(AppTheme.ease, value: session.overlayHint)
-        .glass(appearance, breathing: session.isTranslating)
+        .padding(.top, 8)
     }
 
     private var languageCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("语言", systemImage: "globe")
-                .font(.headline)
-            HStack(spacing: 10) {
-                Button { showSourcePicker = true } label: {
-                    GlassChip(
-                        title: "识别",
-                        value: LanguageOption.sources.first(where: { $0.id == session.settings.sourceLanguage })?.title ?? "自动",
-                        appearance: appearance,
-                        symbol: "text.viewfinder"
-                    )
-                }
-                .buttonStyle(PressableButtonStyle())
-                Image(systemName: "arrow.right")
-                    .foregroundStyle(.secondary)
-                Button { showTargetPicker = true } label: {
-                    GlassChip(
-                        title: "翻译成",
-                        value: LanguageOption.targets.first(where: { $0.id == session.settings.targetLanguage })?.title ?? "简体中文",
-                        appearance: appearance,
-                        symbol: "character.bubble"
-                    )
-                }
-                .buttonStyle(PressableButtonStyle())
+        HStack(spacing: 10) {
+            Button { showSourcePicker = true } label: {
+                languagePill(
+                    flag: flag(for: session.settings.sourceLanguage),
+                    title: LanguageOption.sources.first(where: { $0.id == session.settings.sourceLanguage })?.title ?? "自动"
+                )
             }
+            .buttonStyle(PressableButtonStyle())
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Button { showTargetPicker = true } label: {
+                languagePill(
+                    flag: flag(for: session.settings.targetLanguage),
+                    title: LanguageOption.targets.first(where: { $0.id == session.settings.targetLanguage })?.title ?? "简体中文"
+                )
+            }
+            .buttonStyle(PressableButtonStyle())
         }
-        .glass(appearance)
+        .padding(12)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
-    private var sceneCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("翻译模式", systemImage: "square.grid.2x2.fill")
+    private func languagePill(flag: String, title: String) -> some View {
+        HStack(spacing: 8) {
+            Text(flag)
+            Text(title)
                 .font(.headline)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                ForEach(TranslateScene.allCases) { scene in
-                    Button {
-                        withAnimation(AppTheme.spring) {
-                            session.settings.translateScene = scene
+                .foregroundStyle(.primary)
+            Spacer()
+            Image(systemName: "chevron.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(Color(red: 0.96, green: 0.96, blue: 0.97))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func flag(for id: String) -> String {
+        switch id {
+        case "auto": return "🌐"
+        case "zh-Hans", "zh-Hant": return "🇨🇳"
+        case "en": return "🇺🇸"
+        case "ja": return "🇯🇵"
+        case "ko": return "🇰🇷"
+        case "fr": return "🇫🇷"
+        case "de": return "🇩🇪"
+        case "es": return "🇪🇸"
+        case "ru": return "🇷🇺"
+        case "vi": return "🇻🇳"
+        case "th": return "🇹🇭"
+        default: return "🌐"
+        }
+    }
+
+    private var modeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            row("翻译模式", value: session.settings.translateScene.title) {
+                Menu {
+                    ForEach(TranslateScene.allCases) { scene in
+                        Button(scene.title) {
+                            withAnimation(AppTheme.spring) {
+                                session.settings.translateScene = scene
+                                applyOCRDefault(for: scene, layout: session.settings.mangaLayout)
+                            }
                         }
-                    } label: {
-                        SelectableTile(
-                            title: scene.title,
-                            subtitle: scene.subtitle,
-                            symbol: scene.symbol,
-                            selected: session.settings.translateScene == scene,
-                            appearance: appearance
-                        )
                     }
-                    .buttonStyle(PressableButtonStyle())
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(session.settings.translateScene.title)
+                            .foregroundStyle(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
             if session.settings.translateScene == .manga {
@@ -173,79 +202,111 @@ struct HomeView: View {
                         Button {
                             withAnimation(AppTheme.spring) {
                                 session.settings.mangaLayout = layout
+                                applyOCRDefault(for: .manga, layout: layout)
                             }
                         } label: {
-                            VStack(spacing: 6) {
-                                Image(systemName: layout.symbol)
-                                Text(layout.title)
-                                    .font(.caption.weight(.semibold))
-                                Text(layout.subtitle)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(session.settings.mangaLayout == layout ? palette.ink : Color.primary.opacity(0.05))
-                            .foregroundStyle(session.settings.mangaLayout == layout ? Color.white : Color.primary)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Text(layout.title)
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(session.settings.mangaLayout == layout ? Color(red: 0.23, green: 0.51, blue: 1) : Color(red: 0.96, green: 0.96, blue: 0.97))
+                                .foregroundStyle(session.settings.mangaLayout == layout ? Color.white : Color.primary)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                         .buttonStyle(PressableButtonStyle())
                     }
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                Text(session.settings.mangaLayout.subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-        }
-        .glass(appearance)
-        .animation(AppTheme.spring, value: session.settings.translateScene)
-        .animation(AppTheme.spring, value: session.settings.mangaLayout)
-    }
-
-    private var areaCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("翻译区域", systemImage: "viewfinder")
-                    .font(.headline)
+                Label(session.settings.recognitionMode.title + "识别", systemImage: "viewfinder")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 if session.settings.recognitionMode == .custom {
-                    Button {
-                        showRegionEditor = true
-                    } label: {
-                        Label("编辑", systemImage: "pencil")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(PressableButtonStyle())
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    Button("重新选择区域") { showRegionEditor = true }
+                        .font(.subheadline.weight(.semibold))
                 }
             }
-            HStack(spacing: 8) {
-                ForEach(RecognitionMode.allCases) { mode in
-                    Button {
-                        withAnimation(AppTheme.spring) {
-                            session.settings.recognitionMode = mode
-                        }
-                    } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: mode.symbol)
-                            Text(mode.title)
-                                .font(.caption.weight(.semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(session.settings.recognitionMode == mode ? palette.ink : Color.primary.opacity(0.05))
-                        .foregroundStyle(session.settings.recognitionMode == mode ? Color.white : Color.primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var translatorCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            row("翻译源", value: translatorSummary) {
+                NavigationLink(destination: SettingsView(session: session)) {
+                    HStack(spacing: 4) {
+                        Text(translatorSummary)
+                            .foregroundStyle(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(PressableButtonStyle())
                 }
             }
-            Text(session.settings.recognitionMode.subtitle)
+            Text(session.settings.translatorIsConfigured() ? "已保存密钥，可直接开始" : "点右边去填写百度 / 腾讯 / AI 密钥")
+                .font(.footnote)
+                .foregroundStyle(session.settings.translatorIsConfigured() ? .secondary : Color.orange)
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var translatorSummary: String {
+        let names = session.settings.activeTranslators.map(\.shortTitle)
+        return names.isEmpty ? "未选择" : names.joined(separator: " / ")
+    }
+
+    private var ocrCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            row("OCR", value: session.settings.ocrEngine.title) {
+                Menu {
+                    ForEach(OCREngineKind.allCases) { engine in
+                        Button(engine.title) {
+                            session.settings.ocrEngine = engine
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(session.settings.ocrEngine.title)
+                            .foregroundStyle(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            Text(session.settings.ocrEngine.subtitle + (MLKitOCR.isAvailable || session.settings.ocrEngine != .mlkit ? "" : "（本包未编进 ML Kit 时会回退 Apple）"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .animation(AppTheme.ease, value: session.settings.recognitionMode)
         }
-        .glass(appearance)
-        .animation(AppTheme.spring, value: session.settings.recognitionMode)
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func row<Value: View>(_ title: String, value: String, @ViewBuilder trailing: () -> Value) -> some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer()
+            trailing()
+        }
+        .font(.body)
+    }
+
+    private func applyOCRDefault(for scene: TranslateScene, layout: MangaLayout) {
+        if scene == .manga, layout == .japanese {
+            session.settings.ocrEngine = .mlkit
+        } else if session.settings.ocrEngine == .mlkit {
+            session.settings.ocrEngine = .visionAccurate
+        }
     }
 
     private var startCard: some View {
@@ -255,13 +316,13 @@ struct HomeView: View {
                     readingStopButton
                 } else {
                     Button(action: { session.start() }) {
-                        Text("开始翻译")
+                        Label("启动", systemImage: "play.circle.fill")
                             .font(.headline)
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
-                            .background(palette.ink)
-                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
+                            .background(Color(red: 0.23, green: 0.51, blue: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                     .buttonStyle(PressableButtonStyle())
                 }
@@ -276,7 +337,7 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                BroadcastStartButton(title: "开始翻译")
+                BroadcastStartButton(title: "启动")
             }
 
             if session.settings.activeTranslators.isEmpty {

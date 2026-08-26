@@ -14,7 +14,8 @@
 		F378F0111F1F452E8D23B2AA /* BroadcastPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8961EEA70184446B2BEB435 /* BroadcastPicker.swift */; };
 		1E970DFA0D1B45FD9B8D359B /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A367D8E8E68F45CD8FBA5F93 /* Theme.swift */; };
 		420579C03A824A9498ED8D63 /* TranslationSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA802583DD74A7AB6E46688 /* TranslationSessionController.swift */; };
-		ADE40D238FDB4DA5B7C90CA1 /* OCREngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87663DAEC47443A08D9D8CE9 /* OCREngine.swift */; };
+			ADE40D238FDB4DA5B7C90CA1 /* OCREngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87663DAEC47443A08D9D8CE9 /* OCREngine.swift */; };
+			C8E1A2B0D4F64A1B9C3E5D70 /* MLKitOCR.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F2B3C1E5A74B2C8D4F6E80 /* MLKitOCR.swift */; };
 		CA18C83B2EAB4EA080A0FDD2 /* Translator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F5FB81908A4EA2BA9679A9 /* Translator.swift */; };
 			1E6D6155B547467BA534DF36 /* PiPCaptionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */; };
 			A1C4E0B0D2F14C8E9A7B3C21 /* CaptionBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2D5F1C0E3A24D9F8C6B4A10 /* CaptionBoardView.swift */; };
@@ -91,7 +92,8 @@
 		C8961EEA70184446B2BEB435 /* BroadcastPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BroadcastPicker.swift; sourceTree = "<group>"; };
 		A367D8E8E68F45CD8FBA5F93 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		3BA802583DD74A7AB6E46688 /* TranslationSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationSessionController.swift; sourceTree = "<group>"; };
-		87663DAEC47443A08D9D8CE9 /* OCREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCREngine.swift; sourceTree = "<group>"; };
+			87663DAEC47443A08D9D8CE9 /* OCREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCREngine.swift; sourceTree = "<group>"; };
+			D9F2B3C1E5A74B2C8D4F6E80 /* MLKitOCR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLKitOCR.swift; sourceTree = "<group>"; };
 		A5F5FB81908A4EA2BA9679A9 /* Translator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Translator.swift; sourceTree = "<group>"; };
 			87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPCaptionController.swift; sourceTree = "<group>"; };
 			B2D5F1C0E3A24D9F8C6B4A10 /* CaptionBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionBoardView.swift; sourceTree = "<group>"; };
@@ -202,9 +204,10 @@
 		};
 		A0986584A27C4335B4271CEF /* OCR */ = {
 			isa = PBXGroup;
-			children = (
-				87663DAEC47443A08D9D8CE9 /* OCREngine.swift */,
-			);
+				children = (
+					87663DAEC47443A08D9D8CE9 /* OCREngine.swift */,
+					D9F2B3C1E5A74B2C8D4F6E80 /* MLKitOCR.swift */,
+				);
 			path = OCR;
 			sourceTree = "<group>";
 		};
@@ -390,7 +393,8 @@
 				F378F0111F1F452E8D23B2AA /* BroadcastPicker.swift in Sources */,
 				1E970DFA0D1B45FD9B8D359B /* Theme.swift in Sources */,
 				420579C03A824A9498ED8D63 /* TranslationSessionController.swift in Sources */,
-				ADE40D238FDB4DA5B7C90CA1 /* OCREngine.swift in Sources */,
+					ADE40D238FDB4DA5B7C90CA1 /* OCREngine.swift in Sources */,
+					C8E1A2B0D4F64A1B9C3E5D70 /* MLKitOCR.swift in Sources */,
 				CA18C83B2EAB4EA080A0FDD2 /* Translator.swift in Sources */,
 					1E6D6155B547467BA534DF36 /* PiPCaptionController.swift in Sources */,
 					A1C4E0B0D2F14C8E9A7B3C21 /* CaptionBoardView.swift in Sources */,
@@ -479,12 +483,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.1.15;
+				MARKETING_VERSION = 1.1.16;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app;
 				PRODUCT_NAME = ScreenLingo;
 				SUPPORTS_MACCATALYST = NO;
@@ -503,12 +507,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.1.15;
+				MARKETING_VERSION = 1.1.16;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app;
 				PRODUCT_NAME = ScreenLingo;
 				SUPPORTS_MACCATALYST = NO;
@@ -525,12 +529,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Broadcast/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.1.15;
+				MARKETING_VERSION = 1.1.16;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app.broadcast;
 				PRODUCT_NAME = Broadcast;
 				SKIP_INSTALL = YES;
@@ -547,12 +551,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Broadcast/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.1.15;
+				MARKETING_VERSION = 1.1.16;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app.broadcast;
 				PRODUCT_NAME = Broadcast;
 				SKIP_INSTALL = YES;
