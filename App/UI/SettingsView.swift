@@ -57,7 +57,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("悬浮窗") {
+            Section {
                 Toggle("只显示翻译结果", isOn: Binding(
                     get: { !session.settings.showSourceText },
                     set: { session.settings.showSourceText = !$0 }
@@ -77,6 +77,8 @@ struct SettingsView: View {
                         Text(style.title).tag(style)
                     }
                 }
+            } header: {
+                Text("悬浮窗")
             } footer: {
                 Text("高度会跟着原文和翻译行数收紧，不再留一大块空底。系统画中画窗口本身无法整窗透明。")
             }
@@ -114,7 +116,7 @@ struct SettingsView: View {
                         .foregroundStyle(.primary)
                     Text(session.settings.translatorIsConfigured(kind) ? "已保存密钥" : "点这里填写密钥")
                         .font(.caption)
-                        .foregroundStyle(session.settings.translatorIsConfigured(kind) ? .secondary : .orange)
+                        .foregroundStyle(session.settings.translatorIsConfigured(kind) ? Color.secondary : Color.orange)
                 }
             }
             .buttonStyle(.plain)
