@@ -34,6 +34,10 @@ final class TranslationSessionController: ObservableObject {
     private var homeScreenHold = false
     private var homeHits = 0
     private var lastOCRDate: Date?
+    private var pendingSource = ""
+    private var pendingSince: Date?
+    private var lastFastTranslateAt: Date?
+    private var lastAITranslateAt: Date?
     private var jobID: UInt64 = 0
     private var translationTasks: [TranslatorKind: Task<Void, Never>] = [:]
     private var waitingTicks = 0
@@ -112,6 +116,10 @@ final class TranslationSessionController: ObservableObject {
         homeScreenHold = false
         homeHits = 0
         lastOCRDate = nil
+        pendingSource = ""
+        pendingSince = nil
+        lastFastTranslateAt = nil
+        lastAITranslateAt = nil
         pasteboardChangeCount = UIPasteboard.general.changeCount
         statusLine = waitingMessage()
         overlayHint = settings.translateScene == .reading
@@ -252,7 +260,7 @@ final class TranslationSessionController: ObservableObject {
         let compact = ocr.compactForTranslation(text)
         guard compact != lastPaste, !compact.isEmpty else { return }
         lastPaste = compact
-        await applyRecognized(compact, force: true)
+        await applyRecognized(compact, force: true, kinds: settings.activeTranslators)
     }
 
     private func waitingMessage() -> String {
@@ -278,7 +286,8 @@ final class TranslationSessionController: ObservableObject {
                 : distance > FrameMotion.motionThreshold
             if skip {
                 stillCount = 0
-                cancelTranslations()
+                pendingSource = ""
+                pendingSince = nil
                 statusLine = "滑动中，等待停稳…"
                 return
             }
@@ -315,7 +324,7 @@ final class TranslationSessionController: ObservableObject {
                 statusLine = "这一帧没有识别到字"
                 return
             }
-            await applyRecognized(source, force: force)
+            await queueRecognized(source, force: force)
         } catch {
             lastError = error.localizedDescription
             statusLine = lastError ?? "出错"
@@ -325,13 +334,50 @@ final class TranslationSessionController: ObservableObject {
     private func similarSource(_ a: String, _ b: String) -> Bool {
         guard !a.isEmpty, !b.isEmpty else { return false }
         if a == b { return true }
-        let compactA = a.replacingOccurrences(of: "\\s", with: "", options: .regularExpression)
-        let compactB = b.replacingOccurrences(of: "\\s", with: "", options: .regularExpression)
+        let compactA = compactSource(a)
+        let compactB = compactSource(b)
         if compactA == compactB { return true }
         let maxLen = max(compactA.count, compactB.count)
-        guard maxLen <= 80, abs(compactA.count - compactB.count) <= 2 else { return false }
+        guard maxLen > 0, abs(compactA.count - compactB.count) <= max(2, maxLen / 12) else { return false }
         let shared = zip(compactA, compactB).filter { $0 == $1 }.count
-        return Double(shared) / Double(maxLen) >= 0.86
+        return Double(shared) / Double(maxLen) >= 0.88
+    }
+
+    private func compactSource(_ text: String) -> String {
+        text.unicodeScalars.filter { scalar in
+            !CharacterSet.whitespacesAndNewlines.contains(scalar)
+                && !CharacterSet.punctuationCharacters.contains(scalar)
+        }.map(String.init).joined()
+    }
+
+    private func queueRecognized(_ source: String, force: Bool) async {
+        if force {
+            pendingSource = ""
+            pendingSince = nil
+            await applyRecognized(source, force: true, kinds: settings.activeTranslators)
+            return
+        }
+        if similarSource(source, lastSource), lastFastTranslateAt != nil || lastAITranslateAt != nil {
+            statusLine = "原文几乎没变，沿用上次译文"
+            showRecognized(lastSource)
+            return
+        }
+        if pendingSource.isEmpty || !similarSource(source, pendingSource) {
+            pendingSource = source
+            pendingSince = Date()
+            lastSource = source
+            showRecognized(source)
+            statusLine = "已识别，停稳后翻译"
+            return
+        }
+        pendingSource = source
+        guard let pendingSince, Date().timeIntervalSince(pendingSince) >= 0.5 else {
+            lastSource = source
+            showRecognized(source)
+            statusLine = "已识别，停稳后翻译"
+            return
+        }
+        await applyRecognized(source, force: false, kinds: nil)
     }
 
     private func holdOnHomeScreen() {
@@ -344,27 +390,13 @@ final class TranslationSessionController: ObservableObject {
         pip.update(source: "", lines: [], emptyMessage: "桌面")
     }
 
-    private func applyRecognized(_ source: String, force: Bool) async {
+    private func applyRecognized(_ source: String, force: Bool, kinds: [TranslatorKind]?) async {
         let hash = SHA256.hash(data: Data(source.utf8)).compactMap { String(format: "%02x", $0) }.joined()
-        if !force, hash == lastTextHash {
-            statusLine = "画面未变，沿用上次译文"
-            return
-        }
-        if !force, similarSource(source, lastSource) {
-            lastTextHash = hash
-            statusLine = "原文几乎没变，沿用上次译文"
-            return
-        }
         lastTextHash = hash
         lastSource = source
-        lastTranslated = ""
         lastError = nil
         let started = Date()
-        jobID += 1
-        let currentJob = jobID
-        cancelTranslations()
-        showRecognized(source)
-        let engines = settings.activeTranslators
+        let engines = kinds ?? settings.activeTranslators
         if engines.isEmpty {
             captionLines = []
             isTranslating = false
@@ -373,19 +405,59 @@ final class TranslationSessionController: ObservableObject {
             statusLine = "没勾选翻译源"
             return
         }
-        captionLines = engines.map { kind in
-            CaptionLine(
-                engine: kind,
-                text: "",
-                pending: true,
-                error: settings.translatorIsConfigured(kind) ? nil : TranslatorError.notConfigured.localizedDescription,
-                hex: settings.colorHex(for: kind)
-            )
+
+        let fastReady = force || lastFastTranslateAt.map { Date().timeIntervalSince($0) >= 0.5 } ?? true
+        let aiReady = force || lastAITranslateAt.map { Date().timeIntervalSince($0) >= 1.2 } ?? (pendingSince.map { Date().timeIntervalSince($0) >= 1.2 } ?? false)
+        var launch: [TranslatorKind] = []
+        if fastReady {
+            launch.append(contentsOf: engines.filter { $0 == .baidu || $0 == .tencent })
         }
+        if aiReady {
+            launch.append(contentsOf: engines.filter { $0 == .openai })
+        }
+        launch = launch.filter { translationTasks[$0] == nil }
+        if launch.isEmpty {
+            if engines.contains(.openai), !aiReady {
+                statusLine = "机器翻译已更新，AI 再等停稳"
+            } else {
+                statusLine = "停稳后翻译"
+            }
+            showRecognized(source)
+            return
+        }
+
+        if captionLines.isEmpty || Set(captionLines.map(\.engine)) != Set(engines) {
+            captionLines = engines.map { kind in
+                CaptionLine(
+                    engine: kind,
+                    text: captionLines.first(where: { $0.engine == kind })?.text ?? "",
+                    pending: launch.contains(kind),
+                    error: settings.translatorIsConfigured(kind) ? nil : TranslatorError.notConfigured.localizedDescription,
+                    hex: settings.colorHex(for: kind)
+                )
+            }
+        } else {
+            for kind in launch {
+                if let index = captionLines.firstIndex(where: { $0.engine == kind }) {
+                    captionLines[index].pending = true
+                    captionLines[index].error = settings.translatorIsConfigured(kind) ? nil : TranslatorError.notConfigured.localizedDescription
+                }
+            }
+        }
+        if launch.contains(.baidu) || launch.contains(.tencent) {
+            lastFastTranslateAt = Date()
+        }
+        if launch.contains(.openai) {
+            lastAITranslateAt = Date()
+            pendingSource = ""
+            pendingSince = nil
+        }
+        jobID += 1
+        let currentJob = jobID
         isTranslating = true
         statusLine = "已识别，正在翻译…"
-        refreshOverlay()
-        for kind in engines {
+        showRecognized(source)
+        for kind in launch {
             translationTasks[kind] = Task { [weak self] in
                 await self?.runEngine(kind, source: source, job: currentJob, started: started)
             }
@@ -395,6 +467,7 @@ final class TranslationSessionController: ObservableObject {
     private func runEngine(_ kind: TranslatorKind, source: String, job: UInt64, started: Date) async {
         guard settings.translatorIsConfigured(kind) else {
             updateLine(kind, text: "", pending: false, error: TranslatorError.notConfigured.localizedDescription, job: job)
+            translationTasks[kind] = nil
             return
         }
         let cacheKey = cache.key(
@@ -408,6 +481,7 @@ final class TranslationSessionController: ObservableObject {
         if let hit = cache.get(cacheKey) {
             updateLine(kind, text: hit, pending: false, error: nil, job: job)
             finishIfNeeded(job: job, started: started)
+            translationTasks[kind] = nil
             return
         }
         do {
@@ -421,11 +495,13 @@ final class TranslationSessionController: ObservableObject {
             updateLine(kind, text: translated, pending: false, error: nil, job: job)
             finishIfNeeded(job: job, started: started)
         } catch is CancellationError {
+            translationTasks[kind] = nil
             return
         } catch {
             updateLine(kind, text: "", pending: false, error: error.localizedDescription, job: job)
             finishIfNeeded(job: job, started: started)
         }
+        translationTasks[kind] = nil
     }
 
     private func updateLine(_ kind: TranslatorKind, text: String, pending: Bool, error: String?, job: UInt64) {
