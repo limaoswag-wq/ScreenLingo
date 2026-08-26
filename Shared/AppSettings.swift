@@ -13,8 +13,9 @@ struct AppSettings: Codable, Equatable {
     var showSourceText: Bool = true
     var showRuby: Bool = false
     var captureInterval: Double = 0.6
-    var captionFontSize: CaptionFontSize = .medium
-    var captionWindowSize: CaptionWindowSize = .medium
+    var captionFontSize: CaptionFontSize = .small
+    var captionWindowSize: CaptionWindowSize = .compact
+    var overlayBackground: OverlayBackground = .dim
     var appearanceStyle: AppearanceStyle = .frosted
     var colorTheme: AppColorTheme = .frosted
 
@@ -40,7 +41,7 @@ struct AppSettings: Codable, Equatable {
         case enabledTranslators, translatorColors
         case sourceLanguage, targetLanguage, customRegion
         case showSourceText, showRuby, captureInterval
-        case captionFontSize, captionWindowSize, appearanceStyle, colorTheme
+        case captionFontSize, captionWindowSize, overlayBackground, appearanceStyle, colorTheme
         case googleAPIKey, baiduAppID, baiduSecret
         case tencentSecretId, tencentSecretKey, deeplAPIKey
         case openaiBaseURL, openaiAPIKey, openaiModel, openaiAPIMode
@@ -65,8 +66,9 @@ struct AppSettings: Codable, Equatable {
         showSourceText = try c.decodeIfPresent(Bool.self, forKey: .showSourceText) ?? true
         showRuby = try c.decodeIfPresent(Bool.self, forKey: .showRuby) ?? false
         captureInterval = try c.decodeIfPresent(Double.self, forKey: .captureInterval) ?? 0.6
-        captionFontSize = try c.decodeIfPresent(CaptionFontSize.self, forKey: .captionFontSize) ?? .medium
-        captionWindowSize = try c.decodeIfPresent(CaptionWindowSize.self, forKey: .captionWindowSize) ?? .medium
+        captionFontSize = try c.decodeIfPresent(CaptionFontSize.self, forKey: .captionFontSize) ?? .small
+        captionWindowSize = try c.decodeIfPresent(CaptionWindowSize.self, forKey: .captionWindowSize) ?? .compact
+        overlayBackground = try c.decodeIfPresent(OverlayBackground.self, forKey: .overlayBackground) ?? .dim
         appearanceStyle = try c.decodeIfPresent(AppearanceStyle.self, forKey: .appearanceStyle) ?? .frosted
         colorTheme = try c.decodeIfPresent(AppColorTheme.self, forKey: .colorTheme)
             ?? (appearanceStyle == .solid ? .claude : .frosted)
@@ -101,6 +103,7 @@ struct AppSettings: Codable, Equatable {
         try c.encode(captureInterval, forKey: .captureInterval)
         try c.encode(captionFontSize, forKey: .captionFontSize)
         try c.encode(captionWindowSize, forKey: .captionWindowSize)
+        try c.encode(overlayBackground, forKey: .overlayBackground)
         try c.encode(appearanceStyle, forKey: .appearanceStyle)
         try c.encode(colorTheme, forKey: .colorTheme)
         try c.encode(googleAPIKey, forKey: .googleAPIKey)

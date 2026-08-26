@@ -117,6 +117,18 @@ enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
         [.baidu, .tencent, .openai]
     }
 
+    var shortTitle: String {
+        switch self {
+        case .baidu: return "百度"
+        case .tencent: return "腾讯"
+        case .openai: return "AI"
+        case .google: return "Google"
+        case .deepl: return "DeepL"
+        case .vps: return "VPS"
+        case .apple: return "Apple"
+        }
+    }
+
     var defaultHex: String {
         switch self {
         case .baidu: return "#3B82F6"
@@ -221,7 +233,24 @@ enum AppearanceStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum OverlayBackground: String, Codable, CaseIterable, Identifiable {
+    case solid
+    case dim
+    case ink
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .solid: return "实心"
+        case .dim: return "半透明"
+        case .ink: return "近透明"
+        }
+    }
+}
+
 enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
+    case compact
     case small
     case medium
     case large
@@ -230,17 +259,19 @@ enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .compact: return "紧凑"
         case .small: return "小"
         case .medium: return "中"
         case .large: return "大"
         }
     }
 
-    var canvas: CGSize {
+    var width: CGFloat {
         switch self {
-        case .small: return CGSize(width: 640, height: 220)
-        case .medium: return CGSize(width: 720, height: 280)
-        case .large: return CGSize(width: 900, height: 360)
+        case .compact: return 520
+        case .small: return 580
+        case .medium: return 640
+        case .large: return 760
         }
     }
 }

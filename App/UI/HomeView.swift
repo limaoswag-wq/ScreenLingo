@@ -273,13 +273,13 @@ struct HomeView: View {
 
     private var resultCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("最近一次结果", systemImage: "text.aligncenter")
+            Label("最近一次结果", systemImage: "text.alignleft")
                 .font(.headline)
             if let error = session.lastError, !error.isEmpty {
                 Text(error).foregroundStyle(.orange).font(.footnote)
             }
             if session.settings.showSourceText, !session.lastSource.isEmpty {
-                captionBlock(title: "识别", text: session.lastSource, emphasized: false)
+                resultBlock(title: "原文", text: session.lastSource, color: Color.primary.opacity(0.85), bodyFont: false)
             }
             if session.captionLines.isEmpty && session.lastSource.isEmpty {
                 Text("还没有识别结果。")
@@ -288,11 +288,12 @@ struct HomeView: View {
                     .padding(.vertical, 18)
             } else {
                 ForEach(session.captionLines) { line in
-                    Text(line.displayText)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color(HexColor.uiColor(from: line.hex)))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
+                    resultBlock(
+                        title: line.engine.shortTitle,
+                        text: line.displayText,
+                        color: Color(HexColor.uiColor(from: line.hex)),
+                        bodyFont: true
+                    )
                 }
             }
         }
@@ -302,18 +303,31 @@ struct HomeView: View {
         .animation(AppTheme.ease, value: session.lastSource)
     }
 
-    private func captionBlock(title: String, text: String, emphasized: Bool) -> some View {
-        VStack(spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(emphasized ? .title3.weight(.semibold) : .body)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .textSelection(.enabled)
+    private func resultBlock(title: String, text: String, color: Color, bodyFont: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(color)
+                .frame(width: 4)
+                .padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(color.opacity(0.18))
+                    .foregroundStyle(color)
+                    .clipShape(Capsule())
+                Text(text)
+                    .font(bodyFont ? .title3.weight(.semibold) : .body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
         }
-        .padding(.vertical, 8)
+        .padding(12)
+        .background(Color.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
 }
