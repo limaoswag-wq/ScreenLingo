@@ -125,22 +125,26 @@ struct BaiduTranslator: Translator {
         let secret = settings.baiduSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !appID.isEmpty, !secret.isEmpty else { throw TranslatorError.notConfigured }
         let salt = String(Int.random(in: 10000...99999))
-        let signSource = appID + text + salt + secret
-        let sign = Insecure.MD5.hash(data: Data(signSource.utf8)).map { String(format: "%02x", $0) }.joined()
-        var comps = URLComponents(string: "https://fanyi-api.baidu.com/api/trans/vip/translate")!
-        comps.queryItems = [
-            URLQueryItem(name: "q", value: text),
-            URLQueryItem(name: "from", value: baiduCode(settings.sourceLanguage)),
-            URLQueryItem(name: "to", value: baiduCode(settings.targetLanguage)),
-            URLQueryItem(name: "appid", value: appID),
-            URLQueryItem(name: "salt", value: salt),
-            URLQueryItem(name: "sign", value: sign)
-        ]
-        let (data, response) = try await URLSession.shared.data(from: comps.url!)
+        let sign = Insecure.MD5.hash(data: Data((appID + text + salt + secret).utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        var request = URLRequest(url: URL(string: "https://fanyi-api.baidu.com/api/trans/vip/translate")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 12
+        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.httpBody = formBody([
+            ("q", text),
+            ("from", baiduCode(settings.sourceLanguage)),
+            ("to", baiduCode(settings.targetLanguage)),
+            ("appid", appID),
+            ("salt", salt),
+            ("sign", sign)
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
         try throwIfNeeded(response, data)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if let error = json?["error_msg"] as? String {
-            throw TranslatorError.http(400, error)
+        if let code = baiduErrorCode(json), code != "52000" {
+            throw TranslatorError.http(Int(code) ?? 400, baiduErrorMessage(code, json?["error_msg"] as? String))
         }
         let results = json?["trans_result"] as? [[String: Any]]
         let joined = results?.compactMap { $0["dst"] as? String }.joined(separator: "\n")
@@ -157,8 +161,38 @@ struct BaiduTranslator: Translator {
         case "ko": return "kor"
         case "fr": return "fra"
         case "es": return "spa"
+        case "vi": return "vie"
         default: return id
         }
+    }
+
+    private func baiduErrorCode(_ json: [String: Any]?) -> String? {
+        if let code = json?["error_code"] as? String { return code }
+        if let code = json?["error_code"] as? Int { return String(code) }
+        return nil
+    }
+
+    private func baiduErrorMessage(_ code: String, _ raw: String?) -> String {
+        let mapped: String
+        switch code {
+        case "52001": mapped = "请求超时"
+        case "52002": mapped = "系统错误"
+        case "52003": mapped = "未授权，检查 App ID / 密钥，或通用翻译未开通"
+        case "54000": mapped = "必填参数为空"
+        case "54001": mapped = "签名错误，检查密钥是否贴对"
+        case "54003": mapped = "访问频率超限，免费版大约 1 次/秒"
+        case "54004": mapped = "账户余额不足"
+        case "54005": mapped = "长文本请求过于频繁"
+        case "58000": mapped = "手机出口 IP 不在百度控制台白名单"
+        case "58001": mapped = "不支持的语言方向"
+        case "58002": mapped = "服务已关闭"
+        case "90107": mapped = "认证未通过或服务未开通"
+        default: mapped = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "未知错误"
+        }
+        if let raw, !raw.isEmpty, raw != mapped {
+            return "\(mapped)（\(code) \(raw)）"
+        }
+        return "\(mapped)（\(code)）"
     }
 }
 
@@ -551,4 +585,15 @@ private func unescape(_ text: String) -> String {
 
 private func urlEncode(_ text: String) -> String {
     text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+}
+
+private func formBody(_ fields: [(String, String)]) -> Data {
+    var allowed = CharacterSet.alphanumerics
+    allowed.insert(charactersIn: "-._~")
+    let encoded = fields.map { key, value in
+        let k = key.addingPercentEncoding(withAllowedCharacters: allowed) ?? key
+        let v = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+        return "\(k)=\(v)"
+    }.joined(separator: "&")
+    return Data(encoded.utf8)
 }
