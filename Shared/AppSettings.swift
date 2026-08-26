@@ -3,6 +3,7 @@ import Foundation
 struct AppSettings: Codable, Equatable {
     var recognitionMode: RecognitionMode = .smart
     var translateScene: TranslateScene = .video
+    var mangaLayout: MangaLayout = .japanese
     var ocrEngine: OCREngineKind = .visionFast
     var translator: TranslatorKind = .openai
     var enabledTranslators: [TranslatorKind] = []
@@ -36,7 +37,7 @@ struct AppSettings: Codable, Equatable {
     static let storageKey = "screenlingo.settings.v1"
 
     enum CodingKeys: String, CodingKey {
-        case recognitionMode, translateScene, ocrEngine, translator
+        case recognitionMode, translateScene, mangaLayout, ocrEngine, translator
         case enabledTranslators, translatorColors
         case sourceLanguage, targetLanguage, customRegion
         case showSourceText, showRuby, captureInterval
@@ -53,6 +54,7 @@ struct AppSettings: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         recognitionMode = try c.decodeIfPresent(RecognitionMode.self, forKey: .recognitionMode) ?? .smart
         translateScene = try c.decodeIfPresent(TranslateScene.self, forKey: .translateScene) ?? .video
+        mangaLayout = try c.decodeIfPresent(MangaLayout.self, forKey: .mangaLayout) ?? .japanese
         ocrEngine = try c.decodeIfPresent(OCREngineKind.self, forKey: .ocrEngine) ?? .visionFast
         translator = try c.decodeIfPresent(TranslatorKind.self, forKey: .translator) ?? .openai
         enabledTranslators = (try c.decodeIfPresent([TranslatorKind].self, forKey: .enabledTranslators) ?? [])
@@ -89,6 +91,7 @@ struct AppSettings: Codable, Equatable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(recognitionMode, forKey: .recognitionMode)
         try c.encode(translateScene, forKey: .translateScene)
+        try c.encode(mangaLayout, forKey: .mangaLayout)
         try c.encode(ocrEngine, forKey: .ocrEngine)
         try c.encode(translator, forKey: .translator)
         try c.encode(enabledTranslators, forKey: .enabledTranslators)

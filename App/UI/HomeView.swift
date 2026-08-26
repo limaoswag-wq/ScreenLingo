@@ -167,8 +167,38 @@ struct HomeView: View {
                     .buttonStyle(PressableButtonStyle())
                 }
             }
+            if session.settings.translateScene == .manga {
+                HStack(spacing: 8) {
+                    ForEach(MangaLayout.allCases) { layout in
+                        Button {
+                            withAnimation(AppTheme.spring) {
+                                session.settings.mangaLayout = layout
+                            }
+                        } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: layout.symbol)
+                                Text(layout.title)
+                                    .font(.caption.weight(.semibold))
+                                Text(layout.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(session.settings.mangaLayout == layout ? palette.ink : Color.primary.opacity(0.05))
+                            .foregroundStyle(session.settings.mangaLayout == layout ? Color.white : Color.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .glass(appearance)
+        .animation(AppTheme.spring, value: session.settings.translateScene)
+        .animation(AppTheme.spring, value: session.settings.mangaLayout)
     }
 
     private var areaCard: some View {

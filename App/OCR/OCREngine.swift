@@ -40,7 +40,7 @@ struct OCREngine {
         let merged: String
         switch settings.translateScene {
         case .manga:
-            merged = lineTexts.joined(separator: joiner)
+            merged = mangaFocusText(from: boxes, layout: settings.mangaLayout)
         case .game:
             merged = lineTexts.joined(separator: "\n")
         case .video, .reading:
@@ -65,6 +65,117 @@ struct OCREngine {
         let joined = unique.joined(separator: "\n")
         if joined.count <= 420 { return joined }
         return String(joined.prefix(420))
+    }
+
+    /// Cluster nearby boxes into bubbles, keep the two closest to screen center.
+    private func mangaFocusText(from boxes: [TextBox], layout: MangaLayout) -> String {
+        let usable = boxes.filter { !isMangaJunk($0) }
+        guard !usable.isEmpty else { return "" }
+        let bubbles = clusterBubbles(usable)
+        let ranked = bubbles.sorted {
+            centerDistance($0) < centerDistance($1)
+        }
+        let focused = Array(ranked.prefix(2)).sorted {
+            bubbleRect($0).midY > bubbleRect($1).midY
+        }
+        let joiner = layout == .korean ? " " : ""
+        return focused
+            .map { reconstructBubble($0, layout: layout, joiner: joiner) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
+    private func isMangaJunk(_ box: TextBox) -> Bool {
+        let text = box.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty { return true }
+        if text.contains("/") && text.contains(where: \.isNumber) { return true }
+        let compact = text.replacingOccurrences(of: "！", with: "")
+            .replacingOccurrences(of: "!", with: "")
+            .replacingOccurrences(of: "？", with: "")
+            .replacingOccurrences(of: "?", with: "")
+        if compact.count <= 2, max(box.boundingBox.width, box.boundingBox.height) > 0.10 {
+            return true
+        }
+        return false
+    }
+
+    private func clusterBubbles(_ boxes: [TextBox]) -> [[TextBox]] {
+        var remaining = boxes
+        var clusters: [[TextBox]] = []
+        while let seed = remaining.first {
+            remaining.removeFirst()
+            var cluster = [seed]
+            var changed = true
+            while changed {
+                changed = false
+                remaining.removeAll { box in
+                    if cluster.contains(where: { boxesAreNear($0, box) }) {
+                        cluster.append(box)
+                        changed = true
+                        return true
+                    }
+                    return false
+                }
+            }
+            clusters.append(cluster)
+        }
+        return clusters
+    }
+
+    private func boxesAreNear(_ a: TextBox, _ b: TextBox) -> Bool {
+        let ra = a.boundingBox
+        let rb = b.boundingBox
+        let dx = max(0, max(ra.minX - rb.maxX, rb.minX - ra.maxX))
+        let dy = max(0, max(ra.minY - rb.maxY, rb.minY - ra.maxY))
+        let gap = hypot(dx, dy)
+        let scale = max(0.018, min(ra.height + rb.height, ra.width + rb.width) * 0.28)
+        return gap < scale
+    }
+
+    private func bubbleRect(_ boxes: [TextBox]) -> CGRect {
+        boxes.map(\.boundingBox).reduce(into: boxes[0].boundingBox) { $0 = $0.union($1) }
+    }
+
+    private func centerDistance(_ boxes: [TextBox]) -> CGFloat {
+        let rect = bubbleRect(boxes)
+        return hypot(rect.midX - 0.5, rect.midY - 0.5)
+    }
+
+    private func reconstructBubble(_ boxes: [TextBox], layout: MangaLayout, joiner: String) -> String {
+        switch layout {
+        case .japanese:
+            return reconstructVertical(boxes, joiner: joiner)
+        case .korean:
+            return reconstructHorizontal(boxes, joiner: joiner)
+        }
+    }
+
+    private func reconstructVertical(_ boxes: [TextBox], joiner: String) -> String {
+        let sorted = boxes.sorted {
+            if abs($0.boundingBox.midX - $1.boundingBox.midX) > max(0.018, $0.boundingBox.width * 0.6) {
+                return $0.boundingBox.midX > $1.boundingBox.midX
+            }
+            return $0.boundingBox.midY > $1.boundingBox.midY
+        }
+        var columns: [[TextBox]] = []
+        for box in sorted {
+            if let ref = columns.last?.first {
+                let threshold = max(0.02, max(ref.boundingBox.width, box.boundingBox.width) * 0.85)
+                if abs(box.boundingBox.midX - ref.boundingBox.midX) < threshold {
+                    columns[columns.count - 1].append(box)
+                    continue
+                }
+            }
+            columns.append([box])
+        }
+        return columns.map { column in
+            column.sorted { $0.boundingBox.midY > $1.boundingBox.midY }.map(\.text).joined(separator: joiner)
+        }.joined(separator: joiner)
+    }
+
+    private func reconstructHorizontal(_ boxes: [TextBox], joiner: String) -> String {
+        let lines = groupIntoLines(boxes)
+        return lines.map { $0.map(\.text).joined(separator: joiner) }.joined(separator: joiner)
     }
 
     /// Vision returns one box per visual line. Manga bubbles should read as one sentence.
@@ -175,7 +286,7 @@ struct OCREngine {
             }
             return OCRRegion(x: 0.06, y: 0.58, width: 0.88, height: 0.32).pixelRect(in: size)
         case .manga:
-            return OCRRegion(x: 0.12, y: 0.18, width: 0.76, height: 0.58).pixelRect(in: size)
+            return CGRect(origin: .zero, size: size)
         case .reading:
             return OCRRegion(x: 0.08, y: 0.18, width: 0.84, height: 0.64).pixelRect(in: size)
         }

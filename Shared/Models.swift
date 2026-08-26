@@ -18,7 +18,7 @@ enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .smart: return "自动对准游戏对话或视频字幕带"
+        case .smart: return "游戏/视频对准字幕带，漫画整页找中心气泡"
         case .custom: return "只识别你圈出来的那一块"
         case .full: return "整帧送去 OCR，最全也最慢"
         }
@@ -29,6 +29,34 @@ enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
         case .smart: return "sparkles"
         case .custom: return "crop"
         case .full: return "rectangle.dashed"
+        }
+    }
+}
+
+enum MangaLayout: String, Codable, CaseIterable, Identifiable {
+    case japanese
+    case korean
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .japanese: return "日漫"
+        case .korean: return "韩漫"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .japanese: return "竖排气泡，右到左"
+        case .korean: return "横排气泡，左到右"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .japanese: return "text.justify.right"
+        case .korean: return "text.alignleft"
         }
     }
 }
@@ -53,7 +81,7 @@ enum TranslateScene: String, Codable, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .game: return "适合游戏对话和选项"
-        case .manga: return "适合靠近屏幕中部的气泡"
+        case .manga: return "按气泡拆开，优先屏幕中心那两句"
         case .video: return "适合字幕，横屏底部 / 竖屏顶部"
         case .reading: return "复制文本就会翻译，不用开直播"
         }
