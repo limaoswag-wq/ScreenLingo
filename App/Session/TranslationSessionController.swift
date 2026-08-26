@@ -339,6 +339,9 @@ final class TranslationSessionController: ObservableObject {
         let compactA = compactSource(a)
         let compactB = compactSource(b)
         if compactA == compactB { return true }
+        if settings.translateScene == .manga {
+            return false
+        }
         let maxLen = max(compactA.count, compactB.count)
         guard maxLen > 0, abs(compactA.count - compactB.count) <= max(2, maxLen / 12) else { return false }
         let shared = zip(compactA, compactB).filter { $0 == $1 }.count
@@ -346,10 +349,13 @@ final class TranslationSessionController: ObservableObject {
     }
 
     private func compactSource(_ text: String) -> String {
-        text.unicodeScalars.filter { scalar in
-            !CharacterSet.whitespacesAndNewlines.contains(scalar)
-                && !CharacterSet.punctuationCharacters.contains(scalar)
-        }.map(String.init).joined()
+        text.replacingOccurrences(of: "【", with: "")
+            .replacingOccurrences(of: "】", with: "")
+            .unicodeScalars.filter { scalar in
+                !CharacterSet.whitespacesAndNewlines.contains(scalar)
+                    && !CharacterSet.punctuationCharacters.contains(scalar)
+                    && !CharacterSet.decimalDigits.contains(scalar)
+            }.map(String.init).joined()
     }
 
     private func queueRecognized(_ source: String, force: Bool) async {
@@ -414,7 +420,6 @@ final class TranslationSessionController: ObservableObject {
         if aiReady {
             launch.append(contentsOf: engines.filter { $0 == .openai })
         }
-        launch = launch.filter { translationTasks[$0] == nil }
         if launch.isEmpty {
             if engines.contains(.openai), !aiReady {
                 statusLine = "机器翻译已更新，AI 再等停稳"
@@ -425,24 +430,22 @@ final class TranslationSessionController: ObservableObject {
             return
         }
 
-        if captionLines.isEmpty || Set(captionLines.map(\.engine)) != Set(engines) {
-            captionLines = engines.map { kind in
-                CaptionLine(
-                    engine: kind,
-                    text: captionLines.first(where: { $0.engine == kind })?.text ?? "",
-                    pending: launch.contains(kind),
-                    error: settings.translatorIsConfigured(kind) ? nil : TranslatorError.notConfigured.localizedDescription,
-                    hex: settings.colorHex(for: kind)
-                )
-            }
-        } else {
-            for kind in launch {
-                if let index = captionLines.firstIndex(where: { $0.engine == kind }) {
-                    captionLines[index].pending = true
-                    captionLines[index].error = settings.translatorIsConfigured(kind) ? nil : TranslatorError.notConfigured.localizedDescription
-                }
-            }
+        jobID += 1
+        let currentJob = jobID
+        for kind in launch {
+            translationTasks[kind]?.cancel()
+            translationTasks[kind] = nil
         }
+        captionLines = engines.map { kind in
+            CaptionLine(
+                engine: kind,
+                text: "",
+                pending: launch.contains(kind),
+                error: settings.translatorIsConfigured(kind) ? nil : TranslatorError.notConfigured.localizedDescription,
+                hex: settings.colorHex(for: kind)
+            )
+        }
+        lastTranslated = ""
         translatedSource = source
         if launch.contains(.baidu) || launch.contains(.tencent) {
             lastFastTranslateAt = Date()
@@ -452,8 +455,6 @@ final class TranslationSessionController: ObservableObject {
         }
         pendingSource = ""
         pendingSince = nil
-        jobID += 1
-        let currentJob = jobID
         isTranslating = true
         statusLine = "已识别，正在翻译…"
         showRecognized(source)
@@ -541,9 +542,15 @@ final class TranslationSessionController: ObservableObject {
     }
 
     private func refreshOverlay() {
+        let overlayLines: [CaptionLine]
+        if settings.translateScene == .manga, let primary = settings.activeTranslators.first {
+            overlayLines = captionLines.filter { $0.engine == primary }
+        } else {
+            overlayLines = captionLines
+        }
         pip.update(
             source: settings.showSourceText ? lastSource : "",
-            lines: captionLines,
+            lines: overlayLines,
             emptyMessage: settings.activeTranslators.isEmpty ? "没勾选翻译源" : nil
         )
     }

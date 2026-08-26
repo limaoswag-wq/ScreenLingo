@@ -18,8 +18,8 @@ enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .smart: return "游戏/视频对准字幕带，漫画对准画面中间一带"
-        case .custom: return "只识别你圈出来的那一块"
+        case .smart: return "游戏/视频对准字幕带，漫画对准中间一带再按竖列读"
+        case .custom: return "只识别你圈出来的那一块，日漫同样按竖列读"
         case .full: return "整帧送去 OCR，最全也最慢"
         }
     }
@@ -81,7 +81,7 @@ enum TranslateScene: String, Codable, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .game: return "适合游戏对话和选项"
-        case .manga: return "按气泡拆开，日漫中间一带从右往左读"
+        case .manga: return "日漫按竖列右到左读，自定义框同样生效"
         case .video: return "适合字幕，横屏底部 / 竖屏顶部"
         case .reading: return "复制文本就会翻译，不用开直播"
         }
@@ -288,9 +288,9 @@ enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
 
     var canvas: CGSize {
         switch self {
-        case .small: return CGSize(width: 320, height: 72)
-        case .medium: return CGSize(width: 390, height: 96)
-        case .large: return CGSize(width: 430, height: 132)
+        case .small: return CGSize(width: 320, height: 96)
+        case .medium: return CGSize(width: 390, height: 132)
+        case .large: return CGSize(width: 430, height: 188)
         }
     }
 }

@@ -164,7 +164,7 @@ final class PiPCaptionController: NSObject {
         }
         var blocks: [CaptionBlock] = []
         if !lastSource.isEmpty {
-            blocks.append(CaptionBlock(text: lastSource, font: .systemFont(ofSize: fontSize.sourcePoints, weight: .regular), color: .white, preferred: fontSize.sourcePoints, minimum: 9))
+            blocks.append(CaptionBlock(text: clippedSource(lastSource), font: .systemFont(ofSize: fontSize.sourcePoints, weight: .regular), color: .white, preferred: fontSize.sourcePoints, minimum: 11))
         }
         for line in lastLines.prefix(3) {
             let color: UIColor = {
@@ -172,26 +172,34 @@ final class PiPCaptionController: NSObject {
                 if line.pending && line.text.isEmpty { return UIColor(white: 0.72, alpha: 1) }
                 return HexColor.uiColor(from: line.hex)
             }()
-            blocks.append(CaptionBlock(text: line.displayText, font: .systemFont(ofSize: fontSize.translatedPoints, weight: .semibold), color: color, preferred: fontSize.translatedPoints, minimum: 10))
+            blocks.append(CaptionBlock(text: line.displayText, font: .systemFont(ofSize: fontSize.translatedPoints, weight: .semibold), color: color, preferred: fontSize.translatedPoints, minimum: 13))
         }
         return blocks
     }
 
+    private func clippedSource(_ text: String) -> String {
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        var joined = Array(lines.prefix(2)).joined(separator: "\n")
+        if joined.count > 42 {
+            joined = String(joined.prefix(42)) + "…"
+        }
+        return joined
+    }
+
     private func fitBlocks(_ blocks: [CaptionBlock], in size: CGSize, preferred: CaptionFontSize) -> [CaptionBlock] {
         guard !blocks.isEmpty else { return blocks }
-        var fitted = blocks
+        var working = blocks
+        if working.count > 1, heightNeeded(working, in: size, scale: 0.72) > size.height {
+            working = Array(working.dropFirst())
+        }
+        var fitted = working
         var scale: CGFloat = 1
-        while scale > 0.42 {
-            var total: CGFloat = 0
-            var next: [CaptionBlock] = []
-            for block in blocks {
-                let point = max(block.minimum, floor(block.preferred * scale))
-                let font = UIFont.systemFont(ofSize: point, weight: block.font.fontDescriptor.symbolicTraits.contains(.traitBold) ? .semibold : .regular)
-                let h = height(of: block.text, font: font, width: size.width, maxHeight: size.height)
-                total += h + 6
-                next.append(CaptionBlock(text: block.text, font: font, color: block.color, preferred: point, minimum: block.minimum))
-            }
-            if total - 6 <= size.height {
+        while scale > 0.68 {
+            let next = scaled(working, scale: scale)
+            if heightNeeded(next, in: size, scale: 1) <= size.height {
                 fitted = next
                 break
             }
@@ -201,10 +209,23 @@ final class PiPCaptionController: NSObject {
         return fitted
     }
 
+    private func scaled(_ blocks: [CaptionBlock], scale: CGFloat) -> [CaptionBlock] {
+        blocks.map { block in
+            let point = max(block.minimum, floor(block.preferred * scale))
+            let font = UIFont.systemFont(ofSize: point, weight: block.font.fontDescriptor.symbolicTraits.contains(.traitBold) ? .semibold : .regular)
+            return CaptionBlock(text: block.text, font: font, color: block.color, preferred: point, minimum: block.minimum)
+        }
+    }
+
+    private func heightNeeded(_ blocks: [CaptionBlock], in size: CGSize, scale: CGFloat) -> CGFloat {
+        let scaledBlocks = scale == 1 ? blocks : scaled(blocks, scale: scale)
+        return scaledBlocks.reduce(0) { $0 + height(of: $1.text, font: $1.font, width: size.width, maxHeight: size.height) + 6 } - 6
+    }
+
     private func drawText(_ text: String, font: UIFont, color: UIColor, in rect: CGRect) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        paragraph.lineBreakMode = .byWordWrapping
+        paragraph.lineBreakMode = .byCharWrapping
         let attr = NSAttributedString(string: text, attributes: [
             .font: font,
             .foregroundColor: color,
@@ -216,7 +237,7 @@ final class PiPCaptionController: NSObject {
     private func height(of text: String, font: UIFont, width: CGFloat, maxHeight: CGFloat = 400) -> CGFloat {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        paragraph.lineBreakMode = .byWordWrapping
+        paragraph.lineBreakMode = .byCharWrapping
         let attr = NSAttributedString(string: text, attributes: [
             .font: font,
             .paragraphStyle: paragraph

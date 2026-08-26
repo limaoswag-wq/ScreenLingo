@@ -30,8 +30,7 @@ struct OCREngine {
             accurate: accurate,
             minHeight: minHeight,
             cropRect: cropRect,
-            fullSize: fullSize,
-            characterBoxes: settings.translateScene == .manga && settings.mangaLayout == .japanese
+            fullSize: fullSize
         )
         let minConfidence: Float = settings.translateScene == .manga ? 0.30 : 0.12
         return boxes.filter { $0.confidence >= minConfidence }
@@ -68,7 +67,7 @@ struct OCREngine {
         let merged: String
         switch settings.translateScene {
         case .manga:
-            merged = mangaFocusText(from: boxes, layout: settings.mangaLayout)
+            merged = mangaFocusText(from: boxes, settings: settings)
         case .game:
             merged = lineTexts.joined(separator: "\n")
         case .video, .reading:
@@ -95,24 +94,22 @@ struct OCREngine {
         return String(joined.prefix(420))
     }
 
-    /// Japanese: every in-band balloon, right-to-left then top-to-bottom.
-    /// Korean: the focused balloon, top-to-bottom then left-to-right.
-    private func mangaFocusText(from boxes: [TextBox], layout: MangaLayout) -> String {
+    /// Japanese layout follows the current crop (smart / custom / full), not smart-mode only.
+    private func mangaFocusText(from boxes: [TextBox], settings: AppSettings) -> String {
+        let layout = settings.mangaLayout
         let usable = boxes.filter { !isMangaJunk($0) && looksLikeMangaScript($0.text, layout: layout) }
         guard !usable.isEmpty else { return "" }
-        let glyphs = layout == .japanese ? explodeGlyphs(usable) : usable
-        let bubbles = clusterBubbles(glyphs, mergeColumns: layout == .korean)
-        let ranked = bubbles.sorted { mangaOrder($0, $1, layout: layout) }
-        let joiner = layout == .korean ? " " : ""
         if layout == .korean {
-            return ranked.prefix(1)
-                .map { reconstructBubble($0, layout: layout, joiner: joiner) }
+            let bubbles = clusterBubbles(usable, mergeColumns: true)
+                .sorted { mangaOrder($0, $1, layout: .korean) }
+            return bubbles.prefix(1)
+                .map { reconstructHorizontal($0, joiner: " ") }
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n")
         }
-        let texts = ranked.prefix(4)
-            .map { reconstructJapanese($0) }
-            .filter { !$0.isEmpty }
+        let balloons = japaneseBalloons(from: usable)
+        let limit = settings.recognitionMode == .smart ? 2 : min(3, max(balloons.count, 1))
+        let texts = Array(balloons.prefix(limit)).filter { !$0.isEmpty }
         if texts.count <= 1 { return texts.first ?? "" }
         return texts.enumerated().map { "【\($0.offset + 1)】\($0.element)" }.joined(separator: "\n")
     }
@@ -259,51 +256,80 @@ struct OCREngine {
         boxes.map(\.boundingBox).reduce(into: boxes[0].boundingBox) { $0 = $0.union($1) }
     }
 
-    private func reconstructBubble(_ boxes: [TextBox], layout: MangaLayout, joiner: String) -> String {
-        switch layout {
-        case .japanese:
-            return reconstructJapanese(boxes)
-        case .korean:
-            return reconstructHorizontal(boxes, joiner: joiner)
+    private func japaneseBalloons(from boxes: [TextBox]) -> [String] {
+        let columns = groupJapaneseColumns(splitRowArtifacts(boxes))
+        let balloons = groupJapaneseBalloons(columns)
+        return balloons.compactMap { balloon -> String? in
+            let text = readJapaneseBalloon(balloon)
+            return text.isEmpty ? nil : text
         }
     }
 
-    private func explodeGlyphs(_ boxes: [TextBox]) -> [TextBox] {
-        var out: [TextBox] = []
-        for box in boxes {
-            let chars = Array(box.text).map(String.init).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            if chars.count <= 1 {
-                out.append(box)
-                continue
-            }
+    /// A wide ML Kit/Vision line is usually one visual row across several vertical columns.
+    /// Place each character by its box, never by the engine's LTR string order.
+    private func splitRowArtifacts(_ boxes: [TextBox]) -> [TextBox] {
+        boxes.flatMap { box -> [TextBox] in
+            let chars = Array(box.text).filter { !$0.isWhitespace && !$0.isNewline }
             let rect = box.boundingBox
-            let vertical = rect.height > rect.width * 1.15
-            for (index, ch) in chars.enumerated() {
-                let span = 1 / CGFloat(chars.count)
-                let slice: CGRect
-                if vertical {
-                    let height = rect.height * span
-                    slice = CGRect(x: rect.minX, y: rect.maxY - height * CGFloat(index + 1), width: rect.width, height: height)
-                } else {
-                    let width = rect.width * span
-                    slice = CGRect(x: rect.minX + width * CGFloat(index), y: rect.minY, width: width, height: rect.height)
-                }
-                out.append(TextBox(text: ch, boundingBox: slice, confidence: box.confidence))
+            if chars.count <= 1 { return [box] }
+            if rect.height > rect.width * 1.25 { return [box] }
+            if rect.width > rect.height * 2.2, rect.height < 0.07 { return [box] }
+            let width = rect.width / CGFloat(chars.count)
+            return chars.enumerated().map { index, ch in
+                TextBox(
+                    text: String(ch),
+                    boundingBox: CGRect(
+                        x: rect.minX + width * CGFloat(index),
+                        y: rect.minY,
+                        width: width,
+                        height: rect.height
+                    ),
+                    confidence: box.confidence
+                )
             }
         }
-        return out
     }
 
-    private func dropFurigana(_ boxes: [TextBox]) -> [TextBox] {
-        guard boxes.count >= 4 else { return boxes }
+    private func groupJapaneseColumns(_ boxes: [TextBox]) -> [[TextBox]] {
         let widths = boxes.map(\.boundingBox.width).sorted()
-        let heights = boxes.map(\.boundingBox.height).sorted()
+        let medianW = max(0.010, widths[widths.count / 2])
+        let columnWidth = max(medianW * 1.15, 0.018)
+        let sorted = boxes.sorted { $0.boundingBox.midX > $1.boundingBox.midX }
+        var columns: [[TextBox]] = []
+        for box in sorted {
+            if let index = columns.firstIndex(where: { column in
+                let refX = column.map(\.boundingBox.midX).reduce(0, +) / CGFloat(column.count)
+                return abs(box.boundingBox.midX - refX) < columnWidth
+            }) {
+                columns[index].append(box)
+            } else {
+                columns.append([box])
+            }
+        }
+        return columns
+            .map { dropAttachedFurigana($0) }
+            .filter { !$0.isEmpty }
+            .sorted { a, b in
+                let xa = a.map(\.boundingBox.midX).reduce(0, +) / CGFloat(a.count)
+                let xb = b.map(\.boundingBox.midX).reduce(0, +) / CGFloat(b.count)
+                return xa > xb
+            }
+    }
+
+    private func dropAttachedFurigana(_ column: [TextBox]) -> [TextBox] {
+        guard column.count >= 3 else { return column }
+        let widths = column.map(\.boundingBox.width).sorted()
+        let heights = column.map(\.boundingBox.height).sorted()
         let medianW = widths[widths.count / 2]
         let medianH = heights[heights.count / 2]
-        return boxes.filter { box in
-            let small = box.boundingBox.width < medianW * 0.62 && box.boundingBox.height < medianH * 0.72
-            guard small else { return true }
-            return !isMostlyHiragana(box.text)
+        let mainX = column.map(\.boundingBox.midX).reduce(0, +) / CGFloat(column.count)
+        return column.filter { box in
+            let small = box.boundingBox.width < medianW * 0.58 && box.boundingBox.height < medianH * 0.7
+            let beside = abs(box.boundingBox.midX - mainX) > medianW * 0.28
+            if small && beside && isMostlyHiragana(box.text) {
+                return false
+            }
+            return true
         }
     }
 
@@ -317,41 +343,35 @@ struct OCREngine {
         return Double(hira) / Double(scalars.count) >= 0.7
     }
 
-    private func reconstructJapanese(_ boxes: [TextBox]) -> String {
-        let cleaned = dropFurigana(explodeGlyphs(boxes))
-        guard !cleaned.isEmpty else { return "" }
-        if isHorizontalRun(cleaned) {
-            return reconstructHorizontal(cleaned, joiner: "")
+    private func groupJapaneseBalloons(_ columns: [[TextBox]]) -> [[[TextBox]]] {
+        guard !columns.isEmpty else { return [] }
+        var balloons: [[[TextBox]]] = [[columns[0]]]
+        for column in columns.dropFirst() {
+            let previous = balloons[balloons.count - 1].last!
+            if japaneseColumnsShareBalloon(previous, column) {
+                balloons[balloons.count - 1].append(column)
+            } else {
+                balloons.append([column])
+            }
         }
-        return reconstructVerticalColumns(cleaned)
+        return balloons
     }
 
-    private func isHorizontalRun(_ boxes: [TextBox]) -> Bool {
-        let rect = bubbleRect(boxes)
-        let text = boxes.map(\.text).joined()
-        return rect.width > rect.height * 1.8 && rect.height < 0.08 && text.count >= 4
+    private func japaneseColumnsShareBalloon(_ a: [TextBox], _ b: [TextBox]) -> Bool {
+        let ra = bubbleRect(a)
+        let rb = bubbleRect(b)
+        let gapX = max(0, max(ra.minX - rb.maxX, rb.minX - ra.maxX))
+        let overlapY = min(ra.maxY, rb.maxY) - max(ra.minY, rb.minY)
+        let enoughOverlap = overlapY > min(ra.height, rb.height) * 0.28
+        let close = gapX < max(0.045, min(ra.width, rb.width) * 1.8)
+        return enoughOverlap && close
     }
 
-    private func reconstructVerticalColumns(_ boxes: [TextBox]) -> String {
-        let widths = boxes.map(\.boundingBox.width).sorted()
-        let medianW = max(0.008, widths[widths.count / 2])
-        let columnWidth = max(medianW * 0.85, 0.012)
-        let sorted = boxes.sorted { a, b in
-            if abs(a.boundingBox.midX - b.boundingBox.midX) > columnWidth {
-                return a.boundingBox.midX > b.boundingBox.midX
-            }
-            return a.boundingBox.midY > b.boundingBox.midY
-        }
-        var columns: [[TextBox]] = []
-        for box in sorted {
-            if let last = columns.last {
-                let refX = last.map(\.boundingBox.midX).reduce(0, +) / CGFloat(last.count)
-                if abs(box.boundingBox.midX - refX) < columnWidth {
-                    columns[columns.count - 1].append(box)
-                    continue
-                }
-            }
-            columns.append([box])
+    private func readJapaneseBalloon(_ columns: [[TextBox]]) -> String {
+        let rect = bubbleRect(columns.flatMap { $0 })
+        let text = columns.flatMap { $0 }.map(\.text).joined()
+        if rect.width > rect.height * 2.2, rect.height < 0.07, text.count >= 3 {
+            return reconstructHorizontal(columns.flatMap { $0 }, joiner: "")
         }
         return columns.map { column in
             column.sorted { $0.boundingBox.midY > $1.boundingBox.midY }.map(\.text).joined()
@@ -428,8 +448,7 @@ struct OCREngine {
         accurate: Bool,
         minHeight: Float,
         cropRect: CGRect,
-        fullSize: CGSize,
-        characterBoxes: Bool = false
+        fullSize: CGSize
     ) throws -> [TextBox] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = accurate ? .accurate : .fast
@@ -441,43 +460,16 @@ struct OCREngine {
         }
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
-        return (request.results ?? []).flatMap { observation -> [TextBox] in
-            guard let candidate = observation.topCandidates(1).first else { return [] }
-            let raw = candidate.string
-            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard text.count >= 1 else { return [] }
-            if characterBoxes, raw.count > 1 {
-                let glyphs = glyphBoxes(from: candidate, cropRect: cropRect, fullSize: fullSize)
-                if !glyphs.isEmpty { return glyphs }
-            }
-            return [
-                TextBox(
-                    text: text,
-                    boundingBox: mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize),
-                    confidence: candidate.confidence
-                )
-            ]
+        return (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 1 else { return nil }
+            return TextBox(
+                text: text,
+                boundingBox: mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize),
+                confidence: candidate.confidence
+            )
         }
-    }
-
-    private func glyphBoxes(from candidate: VNRecognizedText, cropRect: CGRect, fullSize: CGSize) -> [TextBox] {
-        var boxes: [TextBox] = []
-        var index = candidate.string.startIndex
-        while index < candidate.string.endIndex {
-            let next = candidate.string.index(after: index)
-            let ch = String(candidate.string[index..<next]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !ch.isEmpty, let region = try? candidate.boundingBox(for: index..<next) {
-                boxes.append(
-                    TextBox(
-                        text: ch,
-                        boundingBox: mapBox(region.boundingBox, cropRect: cropRect, fullSize: fullSize),
-                        confidence: candidate.confidence
-                    )
-                )
-            }
-            index = next
-        }
-        return boxes
     }
 
     private func ocrLanguages(settings: AppSettings) -> [String] {
