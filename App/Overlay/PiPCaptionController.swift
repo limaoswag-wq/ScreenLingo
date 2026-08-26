@@ -11,9 +11,13 @@ final class PiPCaptionController: NSObject {
     private var pip: AVPictureInPictureController?
     var fontSize: CaptionFontSize = .medium
     var windowSize: CaptionWindowSize = .medium {
-        didSet { canvasSize = windowSize.canvas }
+        didSet {
+            guard oldValue != windowSize else { return }
+            canvasSize = windowSize.canvas
+            render()
+        }
     }
-    private var canvasSize = CGSize(width: 720, height: 280)
+    private var canvasSize = CGSize(width: 640, height: 220)
     private var lastSource = ""
     private var lastLines: [CaptionLine] = []
     private var emptyMessage: String?
@@ -64,16 +68,33 @@ final class PiPCaptionController: NSObject {
     }
 
     func start() {
+        canvasSize = windowSize.canvas
+        if pip == nil {
+            setupPiP()
+        }
         render()
         hideTransportChrome()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.hideTransportChrome()
-            self?.pip?.startPictureInPicture()
+            guard let self else { return }
+            self.hideTransportChrome()
+            if self.pip?.isPictureInPictureActive != true {
+                self.pip?.startPictureInPicture()
+            }
         }
     }
 
     func stop() {
         pip?.stopPictureInPicture()
+    }
+
+    func rebuild() {
+        pip?.stopPictureInPicture()
+        pip = nil
+        if displayLayer.status == .failed {
+            displayLayer.flush()
+        }
+        setupPiP()
+        render()
     }
 
     func update(source: String, lines: [CaptionLine], emptyMessage: String? = nil) {
@@ -126,6 +147,13 @@ final class PiPCaptionController: NSObject {
                 let h = height(of: text, font: font, width: inset.width)
                 drawCentered(text, font: font, color: UIColor(white: 0.78, alpha: 1), in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
             } else {
+                if lastSource.isEmpty {
+                    let hint = "已识别，正在翻译…"
+                    let hintFont = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .regular)
+                    let hintHeight = height(of: hint, font: hintFont, width: inset.width)
+                    drawCentered(hint, font: hintFont, color: UIColor(white: 0.78, alpha: 1), in: CGRect(x: inset.minX, y: y, width: inset.width, height: hintHeight))
+                    y += hintHeight + 8
+                }
                 let transFont = UIFont.systemFont(ofSize: fontSize.translatedPoints, weight: .semibold)
                 for line in lastLines {
                     let text = line.displayText

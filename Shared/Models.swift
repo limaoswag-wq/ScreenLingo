@@ -278,9 +278,9 @@ enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
 
     var canvas: CGSize {
         switch self {
-        case .small: return CGSize(width: 640, height: 220)
-        case .medium: return CGSize(width: 720, height: 280)
-        case .large: return CGSize(width: 900, height: 360)
+        case .small: return CGSize(width: 480, height: 168)
+        case .medium: return CGSize(width: 640, height: 220)
+        case .large: return CGSize(width: 900, height: 320)
         }
     }
 }

@@ -7,6 +7,7 @@ enum AppConstants {
     static let appGroupID = "group.dev.screenlingo"
     static let darwinFrameReady = "dev.screenlingo.frameReady"
     static let darwinBroadcastState = "dev.screenlingo.broadcastState"
+    static let darwinStopBroadcast = "dev.screenlingo.stopBroadcast"
 
     static let frameFileName = "latest.jpg"
     static let frameMetaFileName = "latest.json"

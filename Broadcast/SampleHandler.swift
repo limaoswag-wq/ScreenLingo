@@ -3,6 +3,17 @@ import CoreMedia
 import CoreVideo
 import QuartzCore
 
+private func screenLingoStopBroadcast(
+    _ center: CFNotificationCenter?,
+    _ observer: UnsafeMutableRawPointer?,
+    _ name: CFNotificationName?,
+    _ object: UnsafeRawPointer?,
+    _ userInfo: CFDictionary?
+) {
+    guard let observer else { return }
+    Unmanaged<SampleHandler>.fromOpaque(observer).takeUnretainedValue().finishBroadcastGracefully()
+}
+
 /// Thin upload extension: capture frames only. OCR and translation stay in the app.
 @objc(SampleHandler)
 final class SampleHandler: RPBroadcastSampleHandler {
@@ -10,9 +21,11 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private var lastSettingsLoad: CFTimeInterval = 0
     private var captureInterval: TimeInterval = AppConstants.captureMinInterval
     private let store = AppGroupStore.shared
+    private var stopObserver: UnsafeRawPointer?
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         store.setBroadcasting(true)
+        listenForStop()
     }
 
     override func broadcastPaused() {
@@ -21,10 +34,37 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
     override func broadcastResumed() {
         store.setBroadcasting(true)
+        listenForStop()
     }
 
     override func broadcastFinished() {
         store.setBroadcasting(false)
+        unlistenForStop()
+    }
+
+    private func listenForStop() {
+        unlistenForStop()
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        stopObserver = UnsafeRawPointer(observer)
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            UnsafeMutableRawPointer(observer),
+            screenLingoStopBroadcast,
+            AppConstants.darwinStopBroadcast as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    private func unlistenForStop() {
+        guard let stopObserver else { return }
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            UnsafeMutableRawPointer(mutating: stopObserver),
+            CFNotificationName(AppConstants.darwinStopBroadcast as CFString),
+            nil
+        )
+        self.stopObserver = nil
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {

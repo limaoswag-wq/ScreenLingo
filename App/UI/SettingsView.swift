@@ -72,6 +72,12 @@ struct SettingsView: View {
                         Text(size.title).tag(size)
                     }
                 }
+                .onChange(of: session.settings.captionWindowSize) { _ in
+                    session.applyOverlayAppearance()
+                }
+                .onChange(of: session.settings.captionFontSize) { _ in
+                    session.applyOverlayAppearance()
+                }
             }
 
             Section("说明") {

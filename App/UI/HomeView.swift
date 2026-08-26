@@ -252,7 +252,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             if session.settings.translateScene == .reading {
                 if session.isRunning {
-                    stopButton
+                    readingStopButton
                 } else {
                     Button(action: { session.start() }) {
                         Text("开始翻译")
@@ -268,8 +268,13 @@ struct HomeView: View {
                 Text("阅读模式不用开直播。复制一段文字就会翻译。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            } else if session.isBroadcasting {
-                stopButton
+            } else if session.isBroadcasting || session.isRunning {
+                broadcastStopButton
+                if session.isBroadcasting {
+                    Text("停止会同时关掉录屏和浮窗。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 BroadcastStartButton(title: "开始翻译")
             }
@@ -287,7 +292,7 @@ struct HomeView: View {
         .glass(appearance, breathing: session.isTranslating)
     }
 
-    private var stopButton: some View {
+    private var readingStopButton: some View {
         Button(role: .destructive) {
             withAnimation(AppTheme.ease) { session.stop() }
         } label: {
@@ -299,6 +304,26 @@ struct HomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
         }
         .buttonStyle(PressableButtonStyle())
+    }
+
+    private var broadcastStopButton: some View {
+        ZStack {
+            Label("停止", systemImage: "stop.fill")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.red.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
+                .allowsHitTesting(false)
+            BroadcastPicker(onTap: {
+                withAnimation(AppTheme.ease) { session.stop() }
+            })
+            .opacity(0.02)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 52)
+        .contentShape(Rectangle())
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
     }
 
     private var resultCard: some View {

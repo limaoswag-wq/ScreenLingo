@@ -43,6 +43,7 @@ final class TranslationSessionController: ObservableObject {
     private var wasBroadcasting = false
     private var broadcastWatcher: Timer?
     private var suppressAutoStart = false
+    private var stopRequested = false
 
     var pipHostView: UIView { pip.hostView }
 
@@ -67,6 +68,15 @@ final class TranslationSessionController: ObservableObject {
                 self?.refreshForegroundHint()
             }
         }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleAppWillTerminate()
+            }
+        }
         let watcher = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.watchBroadcast()
@@ -79,13 +89,14 @@ final class TranslationSessionController: ObservableObject {
     private func watchBroadcast() {
         let broadcasting = store.readBroadcasting()
         isBroadcasting = broadcasting
-        if broadcasting && !isRunning && !suppressAutoStart && settings.translateScene != .reading {
+        if broadcasting && !isRunning && !suppressAutoStart && !stopRequested && settings.translateScene != .reading {
             start()
         }
     }
 
     func start() {
         suppressAutoStart = false
+        stopRequested = false
         isRunning = true
         lastError = nil
         lastLatencyMS = nil
@@ -93,6 +104,11 @@ final class TranslationSessionController: ObservableObject {
         overlayVisible = false
         stillCount = 0
         lastFingerprint = 0
+        lastTextHash = ""
+        lastSource = ""
+        lastTranslated = ""
+        captionLines = []
+        lastFrameDate = nil
         homeScreenHold = false
         homeHits = 0
         lastOCRDate = nil
@@ -112,19 +128,59 @@ final class TranslationSessionController: ObservableObject {
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+        if store.readBroadcasting() {
+            isBroadcasting = true
+            overlayVisible = false
+            pip.rebuild()
+            showOverlayIfNeeded()
+        }
     }
 
     func stop() {
         suppressAutoStart = true
+        stopRequested = true
         isRunning = false
         timer?.invalidate()
         timer = nil
         cancelTranslations()
         hideOverlay()
         SilentAudio.shared.stop()
+        requestBroadcastStop()
         overlayHint = ""
         statusLine = "已停止"
         isTranslating = false
+    }
+
+    func handleAppBackgrounded() {
+        // Switching to another app must keep the broadcast. Only stop if the
+        // user already tapped Stop, or the process is about to go away.
+        if stopRequested {
+            requestBroadcastStop()
+        }
+    }
+
+    func handleAppWillTerminate() {
+        requestBroadcastStop()
+        hideOverlay()
+        SilentAudio.shared.stop()
+    }
+
+    func applyOverlayAppearance() {
+        pip.fontSize = settings.captionFontSize
+        pip.windowSize = settings.captionWindowSize
+    }
+
+    private func requestBroadcastStop() {
+        store.setBroadcasting(false)
+        store.postDarwin(name: AppConstants.darwinStopBroadcast)
+        isBroadcasting = false
+        wasBroadcasting = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            AppGroupStore.shared.postDarwin(name: AppConstants.darwinStopBroadcast)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            AppGroupStore.shared.postDarwin(name: AppConstants.darwinStopBroadcast)
+        }
     }
 
     func previewPhoto(_ image: CGImage) async {
@@ -154,11 +210,16 @@ final class TranslationSessionController: ObservableObject {
         pip.windowSize = settings.captionWindowSize
 
         if broadcasting && !wasBroadcasting {
+            overlayVisible = false
+            pip.rebuild()
             showOverlayIfNeeded()
             refreshForegroundHint()
         } else if !broadcasting && wasBroadcasting {
             hideOverlay()
             overlayHint = "直播已结束"
+            if stopRequested {
+                statusLine = "已停止"
+            }
         }
         wasBroadcasting = broadcasting
 
@@ -298,6 +359,7 @@ final class TranslationSessionController: ObservableObject {
             return
         }
         if !force, similarSource(source, lastSource) {
+            lastTextHash = hash
             statusLine = "原文几乎没变，沿用上次译文"
             return
         }

@@ -6,19 +6,28 @@ import UIKit
 /// `RPSystemBroadcastPickerView` with its inner UIButton stretched to the whole area.
 struct BroadcastPicker: UIViewRepresentable {
     var preferredExtension: String = AppConstants.broadcastBundleID
+    var onTap: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onTap: onTap)
     }
 
     func makeUIView(context: Context) -> BroadcastPickerHost {
         let host = BroadcastPickerHost()
         host.preferredExtension = preferredExtension
+        host.onTap = { context.coordinator.onTap?() }
         return host
     }
 
     func updateUIView(_ uiView: BroadcastPickerHost, context: Context) {
         uiView.preferredExtension = preferredExtension
+        context.coordinator.onTap = onTap
+        uiView.onTap = { context.coordinator.onTap?() }
+    }
+
+    final class Coordinator {
+        var onTap: (() -> Void)?
+        init(onTap: (() -> Void)?) { self.onTap = onTap }
     }
 }
 
@@ -26,8 +35,10 @@ final class BroadcastPickerHost: UIView {
     var preferredExtension: String = AppConstants.broadcastBundleID {
         didSet { picker.preferredExtension = preferredExtension }
     }
+    var onTap: (() -> Void)?
 
     private let picker = RPSystemBroadcastPickerView(frame: .zero)
+    private var hookedButton: UIButton?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -71,6 +82,15 @@ final class BroadcastPickerHost: UIView {
         button.tintColor = .clear
         button.backgroundColor = .clear
         button.isUserInteractionEnabled = true
+        if hookedButton !== button {
+            hookedButton?.removeTarget(self, action: #selector(pickerTapped), for: .touchUpInside)
+            button.addTarget(self, action: #selector(pickerTapped), for: .touchUpInside)
+            hookedButton = button
+        }
+    }
+
+    @objc private func pickerTapped() {
+        onTap?()
     }
 }
 

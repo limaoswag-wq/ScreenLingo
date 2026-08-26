@@ -87,22 +87,34 @@ struct OCREngine {
         return String(joined.prefix(420))
     }
 
-    /// Cluster nearby boxes into bubbles, keep the two closest to screen center.
+    /// One bubble at a time. Japanese: right-to-left, then top-to-bottom.
     private func mangaFocusText(from boxes: [TextBox], layout: MangaLayout) -> String {
         let usable = boxes.filter { !isMangaJunk($0) && looksLikeMangaScript($0.text, layout: layout) }
         guard !usable.isEmpty else { return "" }
         let bubbles = clusterBubbles(usable)
-        let ranked = bubbles.sorted {
-            centerDistance($0) < centerDistance($1)
-        }
-        let focused = Array(ranked.prefix(2)).sorted {
-            bubbleRect($0).midY > bubbleRect($1).midY
+        let ranked: [[TextBox]]
+        switch layout {
+        case .japanese:
+            ranked = bubbles.sorted { a, b in
+                let ra = bubbleRect(a)
+                let rb = bubbleRect(b)
+                if abs(ra.midX - rb.midX) > 0.12 {
+                    return ra.midX > rb.midX
+                }
+                return ra.midY > rb.midY
+            }
+        case .korean:
+            ranked = bubbles.sorted { a, b in
+                let ra = bubbleRect(a)
+                let rb = bubbleRect(b)
+                if abs(ra.midY - rb.midY) > 0.08 {
+                    return ra.midY > rb.midY
+                }
+                return ra.midX < rb.midX
+            }
         }
         let joiner = layout == .korean ? " " : ""
-        return focused
-            .map { reconstructBubble($0, layout: layout, joiner: joiner) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
+        return reconstructBubble(ranked[0], layout: layout, joiner: joiner)
     }
 
     private func isMangaJunk(_ box: TextBox) -> Bool {
@@ -175,11 +187,6 @@ struct OCREngine {
 
     private func bubbleRect(_ boxes: [TextBox]) -> CGRect {
         boxes.map(\.boundingBox).reduce(into: boxes[0].boundingBox) { $0 = $0.union($1) }
-    }
-
-    private func centerDistance(_ boxes: [TextBox]) -> CGFloat {
-        let rect = bubbleRect(boxes)
-        return hypot(rect.midX - 0.5, rect.midY - 0.5)
     }
 
     private func reconstructBubble(_ boxes: [TextBox], layout: MangaLayout, joiner: String) -> String {
@@ -316,8 +323,15 @@ struct OCREngine {
     ) -> [TextBox] {
         let usable = boxes.filter { !isMangaJunk($0) }
         guard !usable.isEmpty else { return boxes }
-        let ranked = clusterBubbles(usable).sorted { centerDistance($0) < centerDistance($1) }
-        let targets = Array(ranked.prefix(2)).filter { cluster in
+        let ranked = clusterBubbles(usable).sorted { a, b in
+            let ra = bubbleRect(a)
+            let rb = bubbleRect(b)
+            if abs(ra.midX - rb.midX) > 0.12 {
+                return ra.midX > rb.midX
+            }
+            return ra.midY > rb.midY
+        }
+        let targets = Array(ranked.prefix(1)).filter { cluster in
             let rect = bubbleRect(cluster)
             return rect.height > rect.width * 1.15
         }
