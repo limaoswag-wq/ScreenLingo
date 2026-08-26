@@ -11,7 +11,8 @@ private func screenLingoStopBroadcast(
     _ userInfo: CFDictionary?
 ) {
     guard let observer else { return }
-    Unmanaged<SampleHandler>.fromOpaque(observer).takeUnretainedValue().finishBroadcastGracefully()
+    let handler = Unmanaged<SampleHandler>.fromOpaque(observer).takeUnretainedValue()
+    handler.stopBroadcastFromApp()
 }
 
 /// Thin upload extension: capture frames only. OCR and translation stay in the app.
@@ -53,6 +54,26 @@ final class SampleHandler: RPBroadcastSampleHandler {
             AppConstants.darwinStopBroadcast as CFString,
             nil,
             .deliverImmediately
+        )
+    }
+
+    @objc fileprivate func stopBroadcastFromApp() {
+        let selector = NSSelectorFromString("finishBroadcastWithError:")
+        if responds(to: selector) {
+            let error = NSError(
+                domain: "dev.screenlingo.broadcast",
+                code: 0,
+                userInfo: [NSLocalizedDescriptionKey: "stopped from app"]
+            )
+            perform(selector, with: error)
+            return
+        }
+        finishBroadcastWithError(
+            NSError(
+                domain: "dev.screenlingo.broadcast",
+                code: 0,
+                userInfo: [NSLocalizedDescriptionKey: "stopped from app"]
+            )
         )
     }
 
