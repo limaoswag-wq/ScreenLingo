@@ -9,7 +9,7 @@ enum SilentAudio {
 
         func start() {
             let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try? session.setActive(true)
             if player == nil {
                 player = try? AVAudioPlayer(data: Self.tinyWAV)

@@ -9,8 +9,6 @@ final class PiPCaptionController: NSObject {
     let hostView = PiPHostUIView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
     private let displayLayer = AVSampleBufferDisplayLayer()
     private var pip: AVPictureInPictureController?
-    private var callController: CaptionCallViewController?
-    private var usesVideoCall = false
     var fontSize: CaptionFontSize = .medium
     var windowSize: CaptionWindowSize = .medium {
         didSet { canvasSize = windowSize.canvas }
@@ -37,27 +35,27 @@ final class PiPCaptionController: NSObject {
 
     private func setupPiP() {
         guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
-        if #available(iOS 15.0, *) {
-            let call = CaptionCallViewController()
-            call.preferredContentSize = canvasSize
-            callController = call
-            let source = AVPictureInPictureController.ContentSource(
-                activeVideoCallSourceView: hostView,
-                contentViewController: call
-            )
-            pip = AVPictureInPictureController(contentSource: source)
-            usesVideoCall = true
-        } else {
-            let source = AVPictureInPictureController.ContentSource(
-                sampleBufferDisplayLayer: displayLayer,
-                playbackDelegate: self
-            )
-            pip = AVPictureInPictureController(contentSource: source)
-        }
+        let source = AVPictureInPictureController.ContentSource(
+            sampleBufferDisplayLayer: displayLayer,
+            playbackDelegate: self
+        )
+        pip = AVPictureInPictureController(contentSource: source)
         pip?.delegate = self
         pip?.canStartPictureInPictureAutomaticallyFromInline = true
+        hideTransportChrome()
+    }
+
+    private func hideTransportChrome() {
+        guard let pip else { return }
         if #available(iOS 16.0, *) {
-            pip?.requiresLinearPlayback = true
+            pip.requiresLinearPlayback = true
+        }
+        // Best-effort: hide leftover player chrome if the system still exposes it.
+        if pip.responds(to: NSSelectorFromString("setControlsStyle:")) {
+            pip.setValue(1, forKey: "controlsStyle")
+        }
+        if pip.responds(to: NSSelectorFromString("setRequiresLinearPlayback:")) {
+            pip.setValue(true, forKey: "requiresLinearPlayback")
         }
     }
 
@@ -67,25 +65,11 @@ final class PiPCaptionController: NSObject {
 
     func start() {
         render()
+        hideTransportChrome()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.hideTransportChrome()
             self?.pip?.startPictureInPicture()
         }
-    }
-
-    private func fallbackToVideoPiP() {
-        usesVideoCall = false
-        let source = AVPictureInPictureController.ContentSource(
-            sampleBufferDisplayLayer: displayLayer,
-            playbackDelegate: self
-        )
-        pip = AVPictureInPictureController(contentSource: source)
-        pip?.delegate = self
-        pip?.canStartPictureInPictureAutomaticallyFromInline = true
-        if #available(iOS 16.0, *) {
-            pip?.requiresLinearPlayback = true
-        }
-        render()
-        pip?.startPictureInPicture()
     }
 
     func stop() {
@@ -101,11 +85,6 @@ final class PiPCaptionController: NSObject {
 
     private func render() {
         let image = makeImage()
-        if usesVideoCall {
-            callController?.preferredContentSize = canvasSize
-            callController?.imageView.image = image
-            return
-        }
         guard let buffer = sampleBuffer(from: image) else { return }
         if displayLayer.status == .failed {
             displayLayer.flush()
@@ -248,19 +227,6 @@ final class PiPCaptionController: NSObject {
     }
 }
 
-final class CaptionCallViewController: AVPictureInPictureVideoCallViewController {
-    let imageView = UIImageView()
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1)
-        imageView.contentMode = .scaleAspectFit
-        imageView.frame = view.bounds
-        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(imageView)
-    }
-}
-
 final class PiPHostUIView: UIView {
     var onLayout: ((CGRect) -> Void)?
     override func layoutSubviews() {
@@ -276,13 +242,10 @@ struct PiPHostRepresentable: UIViewRepresentable {
 }
 
 extension PiPCaptionController: AVPictureInPictureControllerDelegate {
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        failedToStartPictureInPictureWithError error: Error
+    func pictureInPictureControllerDidStartPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
     ) {
-        if usesVideoCall {
-            fallbackToVideoPiP()
-        }
+        hideTransportChrome()
     }
 }
 
@@ -295,7 +258,8 @@ extension PiPCaptionController: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureControllerTimeRangeForPlayback(
         _ pictureInPictureController: AVPictureInPictureController
     ) -> CMTimeRange {
-        CMTimeRange(start: .zero, duration: .positiveInfinity)
+        // Finite range so the system does not treat this as a live stream.
+        CMTimeRange(start: .zero, duration: CMTime(seconds: 3600, preferredTimescale: 1))
     }
 
     nonisolated func pictureInPictureControllerIsPlaybackPaused(

@@ -346,6 +346,7 @@ struct OCRRegion: Codable, Equatable {
 struct TextBox: Equatable {
     var text: String
     var boundingBox: CGRect
+    var confidence: Float = 1
 }
 
 struct CaptionLine: Equatable, Identifiable {

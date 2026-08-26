@@ -23,26 +23,32 @@ struct OCREngine {
             fullSize: fullSize
         )
         if settings.translateScene == .manga, settings.mangaLayout == .japanese {
-            let rotated = try recognizeVerticalColumns(
-                cropped,
-                languages: languages,
-                cropRect: cropRect,
-                fullSize: fullSize
-            )
-            boxes.append(contentsOf: rotated)
-            boxes = dedupeBoxes(boxes)
+            boxes = rereadVerticalBubbles(in: image, boxes: boxes, languages: languages)
         }
-        return boxes
+        let minConfidence: Float = settings.translateScene == .manga ? 0.30 : 0.12
+        return boxes.filter { $0.confidence >= minConfidence }
     }
 
     func looksLikeHomeScreen(_ boxes: [TextBox]) -> Bool {
         let labels = boxes.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        guard labels.count >= 8 else { return false }
+        guard labels.count >= 10 else { return false }
+        let hits = labels.filter { Self.homeIconNames.contains($0) }.count
         let short = labels.filter { $0.count <= 8 }.count
         let long = labels.filter { $0.count >= 12 }.count
         let bottom = boxes.filter { $0.boundingBox.midY < 0.18 }.count
-        return short >= 6 && long <= 1 && Double(short) / Double(labels.count) >= 0.7 && bottom >= 3
+        return hits >= 3 && short >= 8 && long == 0 && Double(short) / Double(labels.count) >= 0.8 && bottom >= 3
     }
+
+    private static let homeIconNames: Set<String> = [
+        "设置", "相机", "电话", "信息", "邮件", "时钟", "天气", "地图", "照片",
+        "音乐", "日历", "备忘录", "文件", "健康", "钱包", "图书", "播客",
+        "快捷指令", "翻译", "查找", "通讯录", "计算器", "家庭", "提醒事项",
+        "指南针", "测距仪", "放大镜", "股市", "语音备忘录", "FaceTime",
+        "Settings", "Camera", "Phone", "Messages", "Mail", "Clock", "Weather",
+        "Maps", "Photos", "Music", "Calendar", "Notes", "Files", "Health",
+        "Wallet", "Books", "Podcasts", "Shortcuts", "Translate", "Safari",
+        "App Store"
+    ]
 
     func joinedText(from boxes: [TextBox], settings: AppSettings) -> String {
         let lines = groupIntoLines(boxes)
@@ -83,7 +89,7 @@ struct OCREngine {
 
     /// Cluster nearby boxes into bubbles, keep the two closest to screen center.
     private func mangaFocusText(from boxes: [TextBox], layout: MangaLayout) -> String {
-        let usable = boxes.filter { !isMangaJunk($0) }
+        let usable = boxes.filter { !isMangaJunk($0) && looksLikeMangaScript($0.text, layout: layout) }
         guard !usable.isEmpty else { return "" }
         let bubbles = clusterBubbles(usable)
         let ranked = bubbles.sorted {
@@ -102,6 +108,7 @@ struct OCREngine {
     private func isMangaJunk(_ box: TextBox) -> Bool {
         let text = box.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return true }
+        if box.confidence < 0.30 { return true }
         if text.contains("/") && text.contains(where: \.isNumber) { return true }
         let compact = text.replacingOccurrences(of: "！", with: "")
             .replacingOccurrences(of: "!", with: "")
@@ -111,6 +118,26 @@ struct OCREngine {
             return true
         }
         return false
+    }
+
+    private func looksLikeMangaScript(_ text: String, layout: MangaLayout) -> Bool {
+        if text.count <= 2 { return true }
+        switch layout {
+        case .japanese: return looksLikeJapanese(text)
+        case .korean: return looksLikeHangul(text)
+        }
+    }
+
+    private func looksLikeJapanese(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            (0x3040...0x30FF).contains(scalar.value)
+                || (0x4E00...0x9FFF).contains(scalar.value)
+                || (0xFF66...0xFF9D).contains(scalar.value)
+        }
+    }
+
+    private func looksLikeHangul(_ text: String) -> Bool {
+        text.unicodeScalars.contains { (0xAC00...0xD7AF).contains($0.value) || (0x1100...0x11FF).contains($0.value) }
     }
 
     private func clusterBubbles(_ boxes: [TextBox]) -> [[TextBox]] {
@@ -264,6 +291,9 @@ struct OCREngine {
         request.usesLanguageCorrection = false
         request.minimumTextHeight = minHeight
         request.recognitionLanguages = languages
+        if VNRecognizeTextRequest.supportedRevisions.contains(VNRecognizeTextRequestRevision3) {
+            request.revision = VNRecognizeTextRequestRevision3
+        }
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
         return (request.results ?? []).compactMap { observation in
@@ -272,50 +302,69 @@ struct OCREngine {
             guard text.count >= 1 else { return nil }
             return TextBox(
                 text: text,
-                boundingBox: mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize)
+                boundingBox: mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize),
+                confidence: candidate.confidence
             )
         }
     }
 
-    private func recognizeVerticalColumns(
-        _ image: CGImage,
-        languages: [String],
-        cropRect: CGRect,
-        fullSize: CGSize
-    ) throws -> [TextBox] {
-        let width = image.width
-        let height = image.height
-        let columnCount = 6
-        let columnWidth = max(24, width / columnCount)
-        var boxes: [TextBox] = []
-        for index in 0..<columnCount {
-            let x = max(0, width - (index + 1) * columnWidth)
-            let rect = CGRect(x: x, y: 0, width: min(columnWidth + 12, width - x), height: height)
-            guard rect.width >= 16,
-                  let slice = image.cropping(to: rect.integral),
+    /// Re-OCR only the 1–2 center bubbles that look vertical. Do not slice the whole page.
+    private func rereadVerticalBubbles(
+        in image: CGImage,
+        boxes: [TextBox],
+        languages: [String]
+    ) -> [TextBox] {
+        let usable = boxes.filter { !isMangaJunk($0) }
+        guard !usable.isEmpty else { return boxes }
+        let ranked = clusterBubbles(usable).sorted { centerDistance($0) < centerDistance($1) }
+        let targets = Array(ranked.prefix(2)).filter { cluster in
+            let rect = bubbleRect(cluster)
+            return rect.height > rect.width * 1.15
+        }
+        guard !targets.isEmpty else { return boxes }
+
+        var replaced = boxes
+        let fullSize = CGSize(width: image.width, height: image.height)
+        for cluster in targets {
+            let norm = bubbleRect(cluster).insetBy(dx: -0.012, dy: -0.012)
+            let pixel = CGRect(
+                x: max(0, norm.minX) * fullSize.width,
+                y: max(0, 1 - min(1, norm.maxY)) * fullSize.height,
+                width: min(1, max(0, norm.width)) * fullSize.width,
+                height: min(1, max(0, norm.height)) * fullSize.height
+            ).integral
+            guard pixel.width >= 12, pixel.height >= 24,
+                  let slice = image.cropping(to: pixel),
                   let rotated = rotateClockwise(slice)
             else { continue }
-            let found = try recognizePass(
+            let found = (try? recognizePass(
                 rotated,
                 languages: languages,
-                accurate: false,
+                accurate: true,
                 minHeight: 0.012,
                 cropRect: CGRect(origin: .zero, size: CGSize(width: rotated.width, height: rotated.height)),
                 fullSize: CGSize(width: rotated.width, height: rotated.height)
-            )
-            for box in found {
-                let local = box.boundingBox
-                let mapped = CGRect(
-                    x: (CGFloat(x) + (1 - local.maxY) * rect.width) / CGFloat(width),
-                    y: local.minX,
-                    width: local.height * rect.width / CGFloat(width),
-                    height: local.width
-                )
-                let full = mapBox(mapped, cropRect: cropRect, fullSize: fullSize)
-                boxes.append(TextBox(text: box.text, boundingBox: full))
+            )) ?? []
+            let better = found.filter { $0.confidence >= 0.35 && looksLikeJapanese($0.text) }
+            guard !better.isEmpty else { continue }
+            let joined = better
+                .sorted { $0.boundingBox.midX < $1.boundingBox.midX }
+                .map(\.text)
+                .joined()
+            guard !joined.isEmpty else { continue }
+            let clusterIDs = Set(cluster.map { "\($0.text)|\($0.boundingBox.origin.x)|\($0.boundingBox.origin.y)" })
+            replaced.removeAll { box in
+                clusterIDs.contains("\(box.text)|\(box.boundingBox.origin.x)|\(box.boundingBox.origin.y)")
             }
+            replaced.append(
+                TextBox(
+                    text: joined,
+                    boundingBox: bubbleRect(cluster),
+                    confidence: better.map(\.confidence).max() ?? 0.5
+                )
+            )
         }
-        return boxes
+        return replaced
     }
 
     private func rotateClockwise(_ image: CGImage) -> CGImage? {
@@ -334,17 +383,6 @@ struct OCREngine {
         ctx.rotate(by: .pi / 2)
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return ctx.makeImage()
-    }
-
-    private func dedupeBoxes(_ boxes: [TextBox]) -> [TextBox] {
-        var unique: [TextBox] = []
-        for box in boxes {
-            let overlap = unique.contains {
-                $0.text == box.text && $0.boundingBox.intersects(box.boundingBox.insetBy(dx: -0.01, dy: -0.01))
-            }
-            if !overlap { unique.append(box) }
-        }
-        return unique
     }
 
     private func ocrLanguages(settings: AppSettings) -> [String] {

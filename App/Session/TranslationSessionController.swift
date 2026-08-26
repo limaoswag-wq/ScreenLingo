@@ -32,6 +32,8 @@ final class TranslationSessionController: ObservableObject {
     private var lastFingerprint: UInt64 = 0
     private var stillCount = 0
     private var homeScreenHold = false
+    private var homeHits = 0
+    private var lastOCRDate: Date?
     private var jobID: UInt64 = 0
     private var translationTasks: [TranslatorKind: Task<Void, Never>] = [:]
     private var waitingTicks = 0
@@ -92,6 +94,8 @@ final class TranslationSessionController: ObservableObject {
         stillCount = 0
         lastFingerprint = 0
         homeScreenHold = false
+        homeHits = 0
+        lastOCRDate = nil
         pasteboardChangeCount = UIPasteboard.general.changeCount
         statusLine = waitingMessage()
         overlayHint = settings.translateScene == .reading
@@ -233,12 +237,23 @@ final class TranslationSessionController: ObservableObject {
             stillCount += 1
         }
 
+        if !force, settings.translateScene == .manga, let lastOCRDate,
+           Date().timeIntervalSince(lastOCRDate) < 0.9 {
+            statusLine = "漫画冷却中"
+            return
+        }
+
         do {
+            lastOCRDate = Date()
             let boxes = try await ocr.recognize(image: image, settings: settings)
-            if ocr.looksLikeHomeScreen(boxes) {
-                holdOnHomeScreen()
+            if settings.translateScene != .manga, ocr.looksLikeHomeScreen(boxes) {
+                homeHits += 1
+                if homeHits >= 3 {
+                    holdOnHomeScreen()
+                }
                 return
             }
+            homeHits = 0
             if homeScreenHold {
                 homeScreenHold = false
             }
@@ -252,6 +267,18 @@ final class TranslationSessionController: ObservableObject {
             lastError = error.localizedDescription
             statusLine = lastError ?? "出错"
         }
+    }
+
+    private func similarSource(_ a: String, _ b: String) -> Bool {
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        if a == b { return true }
+        let compactA = a.replacingOccurrences(of: "\\s", with: "", options: .regularExpression)
+        let compactB = b.replacingOccurrences(of: "\\s", with: "", options: .regularExpression)
+        if compactA == compactB { return true }
+        let maxLen = max(compactA.count, compactB.count)
+        guard maxLen <= 80, abs(compactA.count - compactB.count) <= 2 else { return false }
+        let shared = zip(compactA, compactB).filter { $0 == $1 }.count
+        return Double(shared) / Double(maxLen) >= 0.86
     }
 
     private func holdOnHomeScreen() {
@@ -268,6 +295,10 @@ final class TranslationSessionController: ObservableObject {
         let hash = SHA256.hash(data: Data(source.utf8)).compactMap { String(format: "%02x", $0) }.joined()
         if !force, hash == lastTextHash {
             statusLine = "画面未变，沿用上次译文"
+            return
+        }
+        if !force, similarSource(source, lastSource) {
+            statusLine = "原文几乎没变，沿用上次译文"
             return
         }
         lastTextHash = hash
