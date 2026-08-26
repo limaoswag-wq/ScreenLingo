@@ -172,7 +172,7 @@ struct OCREngine {
             }
             clusters.append(cluster)
         }
-        return clusters
+        return mergeColumnClusters(clusters)
     }
 
     private func boxesAreNear(_ a: TextBox, _ b: TextBox) -> Bool {
@@ -181,8 +181,44 @@ struct OCREngine {
         let dx = max(0, max(ra.minX - rb.maxX, rb.minX - ra.maxX))
         let dy = max(0, max(ra.minY - rb.maxY, rb.minY - ra.maxY))
         let gap = hypot(dx, dy)
-        let scale = max(0.018, min(ra.height + rb.height, ra.width + rb.width) * 0.28)
-        return gap < scale
+        let scale = max(0.04, min(ra.height + rb.height, ra.width + rb.width) * 0.55)
+        if gap < scale { return true }
+        let overlapX = min(ra.maxX, rb.maxX) - max(ra.minX, rb.minX)
+        let sameColumn = overlapX > min(ra.width, rb.width) * 0.35
+            || abs(ra.midX - rb.midX) < max(0.045, max(ra.width, rb.width) * 0.9)
+        let closeVertically = dy < max(0.08, max(ra.height, rb.height) * 1.8)
+        return sameColumn && closeVertically
+    }
+
+    /// Korean/Japanese bubbles often split into two far-apart lines in one balloon.
+    private func mergeColumnClusters(_ clusters: [[TextBox]]) -> [[TextBox]] {
+        guard clusters.count > 1 else { return clusters }
+        var merged = clusters
+        var changed = true
+        while changed {
+            changed = false
+            outer: for i in 0..<merged.count {
+                for j in (i + 1)..<merged.count {
+                    if columnClustersAlign(merged[i], merged[j]) {
+                        merged[i].append(contentsOf: merged[j])
+                        merged.remove(at: j)
+                        changed = true
+                        break outer
+                    }
+                }
+            }
+        }
+        return merged
+    }
+
+    private func columnClustersAlign(_ a: [TextBox], _ b: [TextBox]) -> Bool {
+        let ra = bubbleRect(a)
+        let rb = bubbleRect(b)
+        let overlapX = min(ra.maxX, rb.maxX) - max(ra.minX, rb.minX)
+        let sameColumn = overlapX > min(ra.width, rb.width) * 0.28
+            || abs(ra.midX - rb.midX) < 0.06
+        let gapY = max(0, max(ra.minY - rb.maxY, rb.minY - ra.maxY))
+        return sameColumn && gapY < 0.16 && max(ra.width, rb.width) < 0.42
     }
 
     private func bubbleRect(_ boxes: [TextBox]) -> CGRect {
@@ -333,7 +369,7 @@ struct OCREngine {
         }
         let targets = Array(ranked.prefix(1)).filter { cluster in
             let rect = bubbleRect(cluster)
-            return rect.height > rect.width * 1.15
+            return rect.height > rect.width * 0.85 || rect.width < 0.18
         }
         guard !targets.isEmpty else { return boxes }
 
