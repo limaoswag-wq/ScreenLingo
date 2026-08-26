@@ -122,53 +122,89 @@ final class PiPCaptionController: NSObject {
             UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1).setFill()
             ctx.fill(rect)
 
-            let inset = rect.insetBy(dx: 16, dy: 8)
+            let inset = rect.insetBy(dx: 14, dy: 8)
+            let texts = displayBlocks()
+            let fitted = fitBlocks(texts, in: inset.size, preferred: fontSize)
             var y = inset.minY
-            if !lastSource.isEmpty {
-                let sourceFont = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .regular)
-                let sourceHeight = min(inset.height * 0.38, height(of: lastSource, font: sourceFont, width: inset.width))
-                drawText(lastSource, font: sourceFont, color: .white, in: CGRect(x: inset.minX, y: y, width: inset.width, height: sourceHeight))
-                y += sourceHeight + 6
-                UIColor(white: 1, alpha: 0.18).setStroke()
-                let line = UIBezierPath()
-                line.move(to: CGPoint(x: inset.minX + 24, y: y))
-                line.addLine(to: CGPoint(x: inset.maxX - 24, y: y))
-                line.lineWidth = 1
-                line.stroke()
-                y += 6
-            }
-            if let emptyMessage, lastLines.isEmpty {
-                let font = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .medium)
-                let h = height(of: emptyMessage, font: font, width: inset.width)
-                drawText(emptyMessage, font: font, color: .systemOrange, in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
-            } else if lastLines.isEmpty && lastSource.isEmpty {
-                let text = "切换到其他 App 开始翻译"
-                let font = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .medium)
-                let h = height(of: text, font: font, width: inset.width)
-                drawText(text, font: font, color: UIColor(white: 0.78, alpha: 1), in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
-            } else {
-                let transFont = UIFont.systemFont(ofSize: fontSize.translatedPoints, weight: .semibold)
-                for line in lastLines.prefix(3) {
-                    let text = line.displayText
-                    let color: UIColor = {
-                        if line.error != nil { return .systemOrange }
-                        if line.pending && line.text.isEmpty { return UIColor(white: 0.72, alpha: 1) }
-                        return HexColor.uiColor(from: line.hex)
-                    }()
-                    let remain = inset.maxY - y
-                    guard remain > 16 else { break }
-                    let h = min(remain, height(of: text, font: transFont, width: inset.width))
-                    drawText(text, font: transFont, color: color, in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
-                    y += h + 3
+            for (index, block) in fitted.enumerated() {
+                let h = height(of: block.text, font: block.font, width: inset.width, maxHeight: inset.maxY - y)
+                drawText(block.text, font: block.font, color: block.color, in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
+                y += h
+                if index == 0, texts.count > 1, y + 8 < inset.maxY {
+                    y += 4
+                    UIColor(white: 1, alpha: 0.18).setStroke()
+                    let line = UIBezierPath()
+                    line.move(to: CGPoint(x: inset.minX + 20, y: y))
+                    line.addLine(to: CGPoint(x: inset.maxX - 20, y: y))
+                    line.lineWidth = 1
+                    line.stroke()
+                    y += 4
+                } else {
+                    y += 2
                 }
+                if y >= inset.maxY { break }
             }
         }
+    }
+
+    private struct CaptionBlock {
+        var text: String
+        var font: UIFont
+        var color: UIColor
+        var preferred: CGFloat
+        var minimum: CGFloat
+    }
+
+    private func displayBlocks() -> [CaptionBlock] {
+        if let emptyMessage, lastLines.isEmpty {
+            return [CaptionBlock(text: emptyMessage, font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium), color: .systemOrange, preferred: fontSize.sourcePoints, minimum: 9)]
+        }
+        if lastLines.isEmpty && lastSource.isEmpty {
+            return [CaptionBlock(text: "切换到其他 App 开始翻译", font: .systemFont(ofSize: fontSize.sourcePoints, weight: .medium), color: UIColor(white: 0.78, alpha: 1), preferred: fontSize.sourcePoints, minimum: 9)]
+        }
+        var blocks: [CaptionBlock] = []
+        if !lastSource.isEmpty {
+            blocks.append(CaptionBlock(text: lastSource, font: .systemFont(ofSize: fontSize.sourcePoints, weight: .regular), color: .white, preferred: fontSize.sourcePoints, minimum: 9))
+        }
+        for line in lastLines.prefix(3) {
+            let color: UIColor = {
+                if line.error != nil { return .systemOrange }
+                if line.pending && line.text.isEmpty { return UIColor(white: 0.72, alpha: 1) }
+                return HexColor.uiColor(from: line.hex)
+            }()
+            blocks.append(CaptionBlock(text: line.displayText, font: .systemFont(ofSize: fontSize.translatedPoints, weight: .semibold), color: color, preferred: fontSize.translatedPoints, minimum: 10))
+        }
+        return blocks
+    }
+
+    private func fitBlocks(_ blocks: [CaptionBlock], in size: CGSize, preferred: CaptionFontSize) -> [CaptionBlock] {
+        guard !blocks.isEmpty else { return blocks }
+        var fitted = blocks
+        var scale: CGFloat = 1
+        while scale > 0.42 {
+            var total: CGFloat = 0
+            var next: [CaptionBlock] = []
+            for block in blocks {
+                let point = max(block.minimum, floor(block.preferred * scale))
+                let font = UIFont.systemFont(ofSize: point, weight: block.font.fontDescriptor.symbolicTraits.contains(.traitBold) ? .semibold : .regular)
+                let h = height(of: block.text, font: font, width: size.width, maxHeight: size.height)
+                total += h + 6
+                next.append(CaptionBlock(text: block.text, font: font, color: block.color, preferred: point, minimum: block.minimum))
+            }
+            if total - 6 <= size.height {
+                fitted = next
+                break
+            }
+            scale -= 0.06
+            fitted = next
+        }
+        return fitted
     }
 
     private func drawText(_ text: String, font: UIFont, color: UIColor, in rect: CGRect) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineBreakMode = .byWordWrapping
         let attr = NSAttributedString(string: text, attributes: [
             .font: font,
             .foregroundColor: color,
@@ -177,16 +213,16 @@ final class PiPCaptionController: NSObject {
         attr.draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
     }
 
-    private func height(of text: String, font: UIFont, width: CGFloat) -> CGFloat {
+    private func height(of text: String, font: UIFont, width: CGFloat, maxHeight: CGFloat = 400) -> CGFloat {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineBreakMode = .byWordWrapping
         let attr = NSAttributedString(string: text, attributes: [
             .font: font,
             .paragraphStyle: paragraph
         ])
-        let bound = attr.boundingRect(with: CGSize(width: width, height: 120), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
-        return max(18, ceil(bound.height))
+        let bound = attr.boundingRect(with: CGSize(width: width, height: max(18, maxHeight)), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+        return max(14, min(maxHeight, ceil(bound.height)))
     }
 
     private func sampleBuffer(from image: UIImage) -> CMSampleBuffer? {

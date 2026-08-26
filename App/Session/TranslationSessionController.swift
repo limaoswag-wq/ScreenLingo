@@ -146,6 +146,7 @@ final class TranslationSessionController: ObservableObject {
         cancelTranslations()
         hideOverlay()
         SilentAudio.shared.stop()
+        requestBroadcastStop()
         overlayHint = ""
         statusLine = "已停止"
         isTranslating = false
@@ -154,7 +155,7 @@ final class TranslationSessionController: ObservableObject {
     func handleAppBackgrounded() {}
 
     func handleAppWillTerminate() {
-        store.setBroadcasting(false)
+        requestBroadcastStop()
         hideOverlay()
         SilentAudio.shared.stop()
     }
@@ -166,6 +167,7 @@ final class TranslationSessionController: ObservableObject {
 
     private func requestBroadcastStop() {
         store.setBroadcasting(false)
+        store.postDarwin(name: AppConstants.darwinStopBroadcast)
         isBroadcasting = false
         wasBroadcasting = false
     }
