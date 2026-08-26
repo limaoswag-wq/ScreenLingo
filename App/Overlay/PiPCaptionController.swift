@@ -9,6 +9,8 @@ final class PiPCaptionController: NSObject {
     let hostView = PiPHostUIView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
     private let displayLayer = AVSampleBufferDisplayLayer()
     private var pip: AVPictureInPictureController?
+    private var callController: CaptionCallViewController?
+    private var usesVideoCall = false
     var fontSize: CaptionFontSize = .medium
     var windowSize: CaptionWindowSize = .medium {
         didSet { canvasSize = windowSize.canvas }
@@ -29,16 +31,34 @@ final class PiPCaptionController: NSObject {
         hostView.onLayout = { [weak self] bounds in
             self?.displayLayer.frame = bounds
         }
-        if AVPictureInPictureController.isPictureInPictureSupported() {
-            let content = AVPictureInPictureController.ContentSource(
+        setupPiP()
+        render()
+    }
+
+    private func setupPiP() {
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        if #available(iOS 15.0, *) {
+            let call = CaptionCallViewController()
+            call.preferredContentSize = canvasSize
+            callController = call
+            let source = AVPictureInPictureController.ContentSource(
+                activeVideoCallSourceView: hostView,
+                contentViewController: call
+            )
+            pip = AVPictureInPictureController(contentSource: source)
+            usesVideoCall = true
+        } else {
+            let source = AVPictureInPictureController.ContentSource(
                 sampleBufferDisplayLayer: displayLayer,
                 playbackDelegate: self
             )
-            pip = AVPictureInPictureController(contentSource: content)
-            pip?.delegate = self
-            pip?.canStartPictureInPictureAutomaticallyFromInline = true
+            pip = AVPictureInPictureController(contentSource: source)
         }
-        render()
+        pip?.delegate = self
+        pip?.canStartPictureInPictureAutomaticallyFromInline = true
+        if #available(iOS 16.0, *) {
+            pip?.requiresLinearPlayback = true
+        }
     }
 
     var isPossible: Bool {
@@ -50,6 +70,22 @@ final class PiPCaptionController: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             self?.pip?.startPictureInPicture()
         }
+    }
+
+    private func fallbackToVideoPiP() {
+        usesVideoCall = false
+        let source = AVPictureInPictureController.ContentSource(
+            sampleBufferDisplayLayer: displayLayer,
+            playbackDelegate: self
+        )
+        pip = AVPictureInPictureController(contentSource: source)
+        pip?.delegate = self
+        pip?.canStartPictureInPictureAutomaticallyFromInline = true
+        if #available(iOS 16.0, *) {
+            pip?.requiresLinearPlayback = true
+        }
+        render()
+        pip?.startPictureInPicture()
     }
 
     func stop() {
@@ -64,18 +100,24 @@ final class PiPCaptionController: NSObject {
     }
 
     private func render() {
-        guard let buffer = makeBuffer() else { return }
+        let image = makeImage()
+        if usesVideoCall {
+            callController?.preferredContentSize = canvasSize
+            callController?.imageView.image = image
+            return
+        }
+        guard let buffer = sampleBuffer(from: image) else { return }
         if displayLayer.status == .failed {
             displayLayer.flush()
         }
         displayLayer.enqueue(buffer)
     }
 
-    private func makeBuffer() -> CMSampleBuffer? {
+    private func makeImage() -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = true
         format.scale = 1
-        let image = UIGraphicsImageRenderer(size: canvasSize, format: format).image { ctx in
+        return UIGraphicsImageRenderer(size: canvasSize, format: format).image { ctx in
             let rect = CGRect(origin: .zero, size: canvasSize)
             UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1).setFill()
             ctx.fill(rect)
@@ -120,7 +162,6 @@ final class PiPCaptionController: NSObject {
                 }
             }
         }
-        return sampleBuffer(from: image)
     }
 
     private func drawCentered(_ text: String, font: UIFont, color: UIColor, in rect: CGRect) {
@@ -207,6 +248,19 @@ final class PiPCaptionController: NSObject {
     }
 }
 
+final class CaptionCallViewController: AVPictureInPictureVideoCallViewController {
+    let imageView = UIImageView()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1)
+        imageView.contentMode = .scaleAspectFit
+        imageView.frame = view.bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(imageView)
+    }
+}
+
 final class PiPHostUIView: UIView {
     var onLayout: ((CGRect) -> Void)?
     override func layoutSubviews() {
@@ -221,7 +275,16 @@ struct PiPHostRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
-extension PiPCaptionController: AVPictureInPictureControllerDelegate {}
+extension PiPCaptionController: AVPictureInPictureControllerDelegate {
+    func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError error: Error
+    ) {
+        if usesVideoCall {
+            fallbackToVideoPiP()
+        }
+    }
+}
 
 extension PiPCaptionController: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(

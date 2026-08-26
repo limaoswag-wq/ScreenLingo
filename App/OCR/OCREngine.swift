@@ -8,26 +8,40 @@ struct OCREngine {
         settings: AppSettings
     ) async throws -> [TextBox] {
         let cropped = crop(image, settings: settings)
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = settings.ocrEngine == .visionFast ? .fast : .accurate
-        request.usesLanguageCorrection = false
-        request.minimumTextHeight = settings.ocrEngine == .visionFast ? 0.028 : 0.018
-        request.recognitionLanguages = preferredLanguages(source: settings.sourceLanguage)
-
-        let handler = VNImageRequestHandler(cgImage: cropped, options: [:])
-        try handler.perform([request])
-        let observations = request.results ?? []
-
         let cropRect = cropRect(in: CGSize(width: image.width, height: image.height), settings: settings)
         let fullSize = CGSize(width: image.width, height: image.height)
+        let languages = ocrLanguages(settings: settings)
+        let accurate = settings.translateScene == .manga || settings.ocrEngine == .visionAccurate
+        let minHeight: Float = settings.translateScene == .manga ? 0.010 : (accurate ? 0.018 : 0.028)
 
-        return observations.compactMap { observation in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
-            let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard text.count >= 1 else { return nil }
-            let mapped = mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize)
-            return TextBox(text: text, boundingBox: mapped)
+        var boxes = try recognizePass(
+            cropped,
+            languages: languages,
+            accurate: accurate,
+            minHeight: minHeight,
+            cropRect: cropRect,
+            fullSize: fullSize
+        )
+        if settings.translateScene == .manga, settings.mangaLayout == .japanese {
+            let rotated = try recognizeVerticalColumns(
+                cropped,
+                languages: languages,
+                cropRect: cropRect,
+                fullSize: fullSize
+            )
+            boxes.append(contentsOf: rotated)
+            boxes = dedupeBoxes(boxes)
         }
+        return boxes
+    }
+
+    func looksLikeHomeScreen(_ boxes: [TextBox]) -> Bool {
+        let labels = boxes.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard labels.count >= 8 else { return false }
+        let short = labels.filter { $0.count <= 8 }.count
+        let long = labels.filter { $0.count >= 12 }.count
+        let bottom = boxes.filter { $0.boundingBox.midY < 0.18 }.count
+        return short >= 6 && long <= 1 && Double(short) / Double(labels.count) >= 0.7 && bottom >= 3
     }
 
     func joinedText(from boxes: [TextBox], settings: AppSettings) -> String {
@@ -93,7 +107,7 @@ struct OCREngine {
             .replacingOccurrences(of: "!", with: "")
             .replacingOccurrences(of: "？", with: "")
             .replacingOccurrences(of: "?", with: "")
-        if compact.count <= 2, max(box.boundingBox.width, box.boundingBox.height) > 0.10 {
+        if compact.count <= 1, max(box.boundingBox.width, box.boundingBox.height) > 0.14 {
             return true
         }
         return false
@@ -235,6 +249,109 @@ struct OCREngine {
             }.count
             return Double(cjk) / Double(max(text.count, 1)) < 0.35
         }
+    }
+
+    private func recognizePass(
+        _ image: CGImage,
+        languages: [String],
+        accurate: Bool,
+        minHeight: Float,
+        cropRect: CGRect,
+        fullSize: CGSize
+    ) throws -> [TextBox] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = accurate ? .accurate : .fast
+        request.usesLanguageCorrection = false
+        request.minimumTextHeight = minHeight
+        request.recognitionLanguages = languages
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try handler.perform([request])
+        return (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 1 else { return nil }
+            return TextBox(
+                text: text,
+                boundingBox: mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize)
+            )
+        }
+    }
+
+    private func recognizeVerticalColumns(
+        _ image: CGImage,
+        languages: [String],
+        cropRect: CGRect,
+        fullSize: CGSize
+    ) throws -> [TextBox] {
+        let width = image.width
+        let height = image.height
+        let columnCount = 6
+        let columnWidth = max(24, width / columnCount)
+        var boxes: [TextBox] = []
+        for index in 0..<columnCount {
+            let x = max(0, width - (index + 1) * columnWidth)
+            let rect = CGRect(x: x, y: 0, width: min(columnWidth + 12, width - x), height: height)
+            guard rect.width >= 16,
+                  let slice = image.cropping(to: rect.integral),
+                  let rotated = rotateClockwise(slice)
+            else { continue }
+            let found = try recognizePass(
+                rotated,
+                languages: languages,
+                accurate: false,
+                minHeight: 0.012,
+                cropRect: CGRect(origin: .zero, size: CGSize(width: rotated.width, height: rotated.height)),
+                fullSize: CGSize(width: rotated.width, height: rotated.height)
+            )
+            for box in found {
+                let local = box.boundingBox
+                let mapped = CGRect(
+                    x: (CGFloat(x) + (1 - local.maxY) * rect.width) / CGFloat(width),
+                    y: local.minX,
+                    width: local.height * rect.width / CGFloat(width),
+                    height: local.width
+                )
+                let full = mapBox(mapped, cropRect: cropRect, fullSize: fullSize)
+                boxes.append(TextBox(text: box.text, boundingBox: full))
+            }
+        }
+        return boxes
+    }
+
+    private func rotateClockwise(_ image: CGImage) -> CGImage? {
+        let width = image.height
+        let height = image.width
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.translateBy(x: CGFloat(width), y: 0)
+        ctx.rotate(by: .pi / 2)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return ctx.makeImage()
+    }
+
+    private func dedupeBoxes(_ boxes: [TextBox]) -> [TextBox] {
+        var unique: [TextBox] = []
+        for box in boxes {
+            let overlap = unique.contains {
+                $0.text == box.text && $0.boundingBox.intersects(box.boundingBox.insetBy(dx: -0.01, dy: -0.01))
+            }
+            if !overlap { unique.append(box) }
+        }
+        return unique
+    }
+
+    private func ocrLanguages(settings: AppSettings) -> [String] {
+        if settings.translateScene == .manga {
+            return settings.mangaLayout == .japanese ? ["ja-JP"] : ["ko-KR"]
+        }
+        return preferredLanguages(source: settings.sourceLanguage)
     }
 
     private func preferredLanguages(source: String) -> [String] {

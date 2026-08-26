@@ -31,6 +31,7 @@ final class TranslationSessionController: ObservableObject {
     private var lastTextHash = ""
     private var lastFingerprint: UInt64 = 0
     private var stillCount = 0
+    private var homeScreenHold = false
     private var jobID: UInt64 = 0
     private var translationTasks: [TranslatorKind: Task<Void, Never>] = [:]
     private var waitingTicks = 0
@@ -90,6 +91,7 @@ final class TranslationSessionController: ObservableObject {
         overlayVisible = false
         stillCount = 0
         lastFingerprint = 0
+        homeScreenHold = false
         pasteboardChangeCount = UIPasteboard.general.changeCount
         statusLine = waitingMessage()
         overlayHint = settings.translateScene == .reading
@@ -214,14 +216,18 @@ final class TranslationSessionController: ObservableObject {
         if !force, lastFingerprint != 0 {
             let distance = FrameMotion.distance(lastFingerprint, fingerprint)
             lastFingerprint = fingerprint
-            if distance > FrameMotion.motionThreshold {
+            let skip = settings.translateScene == .manga
+                ? distance > FrameMotion.mangaFastThreshold
+                : distance > FrameMotion.motionThreshold
+            if skip {
                 stillCount = 0
                 cancelTranslations()
                 statusLine = "滑动中，等待停稳…"
                 return
             }
             stillCount += 1
-            if stillCount < 2 { return }
+            let needStill = settings.translateScene == .manga ? 1 : 2
+            if stillCount < needStill { return }
         } else {
             lastFingerprint = fingerprint
             stillCount += 1
@@ -229,6 +235,13 @@ final class TranslationSessionController: ObservableObject {
 
         do {
             let boxes = try await ocr.recognize(image: image, settings: settings)
+            if ocr.looksLikeHomeScreen(boxes) {
+                holdOnHomeScreen()
+                return
+            }
+            if homeScreenHold {
+                homeScreenHold = false
+            }
             let source = ocr.joinedText(from: boxes, settings: settings)
             if source.isEmpty {
                 statusLine = "这一帧没有识别到字"
@@ -239,6 +252,16 @@ final class TranslationSessionController: ObservableObject {
             lastError = error.localizedDescription
             statusLine = lastError ?? "出错"
         }
+    }
+
+    private func holdOnHomeScreen() {
+        homeScreenHold = true
+        cancelTranslations()
+        lastError = nil
+        isTranslating = false
+        statusLine = "桌面，暂停翻译"
+        showOverlayIfNeeded()
+        pip.update(source: "", lines: [], emptyMessage: "桌面")
     }
 
     private func applyRecognized(_ source: String, force: Bool) async {
@@ -398,6 +421,8 @@ final class TranslationSessionController: ObservableObject {
 enum FrameMotion {
     /// Hamming distance on an 8x8 average hash. Around 10+ means the shot moved a lot.
     static let motionThreshold: UInt64 = 10
+    /// Manga panels change a lot even when slowly scrolling; only skip fast flicks.
+    static let mangaFastThreshold: UInt64 = 28
 
     static func fingerprint(_ image: CGImage) -> UInt64 {
         let width = 8
