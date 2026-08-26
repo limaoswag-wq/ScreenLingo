@@ -49,21 +49,47 @@ enum MLKitOCR {
         }
         do {
             let result = try recognizer.results(in: visionImage)
-            return result.lines.map { line in
-                let frame = line.frame
-                let mapped = CGRect(
-                    x: (cropRect.minX + frame.minX) / max(fullSize.width, 1),
-                    y: 1 - (cropRect.minY + frame.maxY) / max(fullSize.height, 1),
-                    width: frame.width / max(fullSize.width, 1),
-                    height: frame.height / max(fullSize.height, 1)
-                )
-                return TextBox(text: line.text.trimmingCharacters(in: .whitespacesAndNewlines), boundingBox: mapped, confidence: 0.92)
-            }.filter { !$0.text.isEmpty }
+            var boxes: [TextBox] = []
+            for line in result.lines {
+                if layout == .japanese, !line.elements.isEmpty {
+                    for element in line.elements {
+                        let text = element.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !text.isEmpty else { continue }
+                        boxes.append(
+                            TextBox(
+                                text: text,
+                                boundingBox: mapFrame(element.frame, cropRect: cropRect, fullSize: fullSize),
+                                confidence: 0.92
+                            )
+                        )
+                    }
+                } else {
+                    let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { continue }
+                    boxes.append(
+                        TextBox(
+                            text: text,
+                            boundingBox: mapFrame(line.frame, cropRect: cropRect, fullSize: fullSize),
+                            confidence: 0.92
+                        )
+                    )
+                }
+            }
+            return boxes
         } catch {
             return nil
         }
         #else
         return nil
         #endif
+    }
+
+    private static func mapFrame(_ frame: CGRect, cropRect: CGRect, fullSize: CGSize) -> CGRect {
+        CGRect(
+            x: (cropRect.minX + frame.minX) / max(fullSize.width, 1),
+            y: 1 - (cropRect.minY + frame.maxY) / max(fullSize.height, 1),
+            width: frame.width / max(fullSize.width, 1),
+            height: frame.height / max(fullSize.height, 1)
+        )
     }
 }

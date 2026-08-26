@@ -32,7 +32,7 @@ struct AppSettings: Codable, Equatable {
     var openaiMaxTokens: Int = 512
     var openaiPrompt: String = AppSettings.defaultPrompt
 
-    static let defaultPrompt = "把原文译成指定目标语言。只输出译文，不要解释，不要拼音，不要引号。保留换行。"
+    static let defaultPrompt = "把原文译成指定目标语言。只输出译文，不要解释，不要拼音，不要引号。保留换行。若原文有【1】【2】标记，译文里原样保留，一段对一段。"
 
     static let storageKey = "screenlingo.settings.v1"
 

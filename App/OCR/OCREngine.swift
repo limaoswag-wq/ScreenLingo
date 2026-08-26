@@ -24,17 +24,15 @@ struct OCREngine {
         let accurate = settings.translateScene == .manga || settings.ocrEngine == .visionAccurate || useMLKit
         let minHeight: Float = settings.translateScene == .manga ? 0.010 : (accurate ? 0.018 : 0.028)
 
-        var boxes = try recognizePass(
+        let boxes = try recognizePass(
             cropped,
             languages: languages,
             accurate: accurate,
             minHeight: minHeight,
             cropRect: cropRect,
-            fullSize: fullSize
+            fullSize: fullSize,
+            characterBoxes: settings.translateScene == .manga && settings.mangaLayout == .japanese
         )
-        if settings.translateScene == .manga, settings.mangaLayout == .japanese, settings.ocrEngine != .mlkit {
-            boxes = rereadVerticalBubbles(in: image, boxes: boxes, languages: languages)
-        }
         let minConfidence: Float = settings.translateScene == .manga ? 0.30 : 0.12
         return boxes.filter { $0.confidence >= minConfidence }
     }
@@ -97,34 +95,43 @@ struct OCREngine {
         return String(joined.prefix(420))
     }
 
-    /// One bubble at a time. Japanese: right-to-left, then top-to-bottom.
+    /// Japanese: every in-band balloon, right-to-left then top-to-bottom.
+    /// Korean: the focused balloon, top-to-bottom then left-to-right.
     private func mangaFocusText(from boxes: [TextBox], layout: MangaLayout) -> String {
         let usable = boxes.filter { !isMangaJunk($0) && looksLikeMangaScript($0.text, layout: layout) }
         guard !usable.isEmpty else { return "" }
-        let bubbles = clusterBubbles(usable)
-        let ranked: [[TextBox]]
+        let glyphs = layout == .japanese ? explodeGlyphs(usable) : usable
+        let bubbles = clusterBubbles(glyphs, mergeColumns: layout == .korean)
+        let ranked = bubbles.sorted { mangaOrder($0, $1, layout: layout) }
+        let joiner = layout == .korean ? " " : ""
+        if layout == .korean {
+            return ranked.prefix(1)
+                .map { reconstructBubble($0, layout: layout, joiner: joiner) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+        }
+        let texts = ranked.prefix(4)
+            .map { reconstructJapanese($0) }
+            .filter { !$0.isEmpty }
+        if texts.count <= 1 { return texts.first ?? "" }
+        return texts.enumerated().map { "【\($0.offset + 1)】\($0.element)" }.joined(separator: "\n")
+    }
+
+    private func mangaOrder(_ a: [TextBox], _ b: [TextBox], layout: MangaLayout) -> Bool {
+        let ra = bubbleRect(a)
+        let rb = bubbleRect(b)
         switch layout {
         case .japanese:
-            ranked = bubbles.sorted { a, b in
-                let ra = bubbleRect(a)
-                let rb = bubbleRect(b)
-                if abs(ra.midX - rb.midX) > 0.12 {
-                    return ra.midX > rb.midX
-                }
+            if abs(ra.midX - rb.midX) > 0.08 {
+                return ra.midX > rb.midX
+            }
+            return ra.midY > rb.midY
+        case .korean:
+            if abs(ra.midY - rb.midY) > 0.08 {
                 return ra.midY > rb.midY
             }
-        case .korean:
-            ranked = bubbles.sorted { a, b in
-                let ra = bubbleRect(a)
-                let rb = bubbleRect(b)
-                if abs(ra.midY - rb.midY) > 0.08 {
-                    return ra.midY > rb.midY
-                }
-                return ra.midX < rb.midX
-            }
+            return ra.midX < rb.midX
         }
-        let joiner = layout == .korean ? " " : ""
-        return reconstructBubble(ranked[0], layout: layout, joiner: joiner)
     }
 
     private func isMangaJunk(_ box: TextBox) -> Bool {
@@ -132,6 +139,16 @@ struct OCREngine {
         if text.isEmpty { return true }
         if box.confidence < 0.30 { return true }
         if text.contains("/") && text.contains(where: \.isNumber) { return true }
+        let letters = text.unicodeScalars.filter {
+            CharacterSet.letters.contains($0)
+                || (0x3040...0x30FF).contains($0.value)
+                || (0x4E00...0x9FFF).contains($0.value)
+                || (0xAC00...0xD7AF).contains($0.value)
+        }
+        let digits = text.filter(\.isNumber)
+        if !digits.isEmpty && letters.isEmpty && text.count <= 6 {
+            return true
+        }
         let compact = text.replacingOccurrences(of: "！", with: "")
             .replacingOccurrences(of: "!", with: "")
             .replacingOccurrences(of: "？", with: "")
@@ -162,7 +179,7 @@ struct OCREngine {
         text.unicodeScalars.contains { (0xAC00...0xD7AF).contains($0.value) || (0x1100...0x11FF).contains($0.value) }
     }
 
-    private func clusterBubbles(_ boxes: [TextBox]) -> [[TextBox]] {
+    private func clusterBubbles(_ boxes: [TextBox], mergeColumns: Bool) -> [[TextBox]] {
         var remaining = boxes
         var clusters: [[TextBox]] = []
         while let seed = remaining.first {
@@ -172,7 +189,7 @@ struct OCREngine {
             while changed {
                 changed = false
                 remaining.removeAll { box in
-                    if cluster.contains(where: { boxesAreNear($0, box) }) {
+                    if cluster.contains(where: { boxesAreNear($0, box, tight: !mergeColumns) }) {
                         cluster.append(box)
                         changed = true
                         return true
@@ -182,17 +199,24 @@ struct OCREngine {
             }
             clusters.append(cluster)
         }
-        return mergeColumnClusters(clusters)
+        return mergeColumns ? mergeColumnClusters(clusters) : clusters
     }
 
-    private func boxesAreNear(_ a: TextBox, _ b: TextBox) -> Bool {
+    private func boxesAreNear(_ a: TextBox, _ b: TextBox, tight: Bool) -> Bool {
         let ra = a.boundingBox
         let rb = b.boundingBox
         let dx = max(0, max(ra.minX - rb.maxX, rb.minX - ra.maxX))
         let dy = max(0, max(ra.minY - rb.maxY, rb.minY - ra.maxY))
         let gap = hypot(dx, dy)
-        let scale = max(0.04, min(ra.height + rb.height, ra.width + rb.width) * 0.55)
+        let scale = max(tight ? 0.032 : 0.04, min(ra.height + rb.height, ra.width + rb.width) * (tight ? 0.7 : 0.55))
         if gap < scale { return true }
+        if tight {
+            let stacked = abs(ra.midX - rb.midX) < max(0.022, max(ra.width, rb.width) * 1.05)
+                && dy < max(0.045, max(ra.height, rb.height) * 1.5)
+            let sideBySide = abs(ra.midY - rb.midY) < max(0.035, max(ra.height, rb.height) * 1.15)
+                && dx < max(0.038, max(ra.width, rb.width) * 1.7)
+            return stacked || sideBySide
+        }
         let overlapX = min(ra.maxX, rb.maxX) - max(ra.minX, rb.minX)
         let sameColumn = overlapX > min(ra.width, rb.width) * 0.35
             || abs(ra.midX - rb.midX) < max(0.045, max(ra.width, rb.width) * 0.9)
@@ -238,24 +262,91 @@ struct OCREngine {
     private func reconstructBubble(_ boxes: [TextBox], layout: MangaLayout, joiner: String) -> String {
         switch layout {
         case .japanese:
-            return reconstructVertical(boxes, joiner: joiner)
+            return reconstructJapanese(boxes)
         case .korean:
             return reconstructHorizontal(boxes, joiner: joiner)
         }
     }
 
-    private func reconstructVertical(_ boxes: [TextBox], joiner: String) -> String {
-        let sorted = boxes.sorted {
-            if abs($0.boundingBox.midX - $1.boundingBox.midX) > max(0.018, $0.boundingBox.width * 0.6) {
-                return $0.boundingBox.midX > $1.boundingBox.midX
+    private func explodeGlyphs(_ boxes: [TextBox]) -> [TextBox] {
+        var out: [TextBox] = []
+        for box in boxes {
+            let chars = Array(box.text).map(String.init).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            if chars.count <= 1 {
+                out.append(box)
+                continue
             }
-            return $0.boundingBox.midY > $1.boundingBox.midY
+            let rect = box.boundingBox
+            let vertical = rect.height > rect.width * 1.15
+            for (index, ch) in chars.enumerated() {
+                let span = 1 / CGFloat(chars.count)
+                let slice: CGRect
+                if vertical {
+                    let height = rect.height * span
+                    slice = CGRect(x: rect.minX, y: rect.maxY - height * CGFloat(index + 1), width: rect.width, height: height)
+                } else {
+                    let width = rect.width * span
+                    slice = CGRect(x: rect.minX + width * CGFloat(index), y: rect.minY, width: width, height: rect.height)
+                }
+                out.append(TextBox(text: ch, boundingBox: slice, confidence: box.confidence))
+            }
+        }
+        return out
+    }
+
+    private func dropFurigana(_ boxes: [TextBox]) -> [TextBox] {
+        guard boxes.count >= 4 else { return boxes }
+        let widths = boxes.map(\.boundingBox.width).sorted()
+        let heights = boxes.map(\.boundingBox.height).sorted()
+        let medianW = widths[widths.count / 2]
+        let medianH = heights[heights.count / 2]
+        return boxes.filter { box in
+            let small = box.boundingBox.width < medianW * 0.62 && box.boundingBox.height < medianH * 0.72
+            guard small else { return true }
+            return !isMostlyHiragana(box.text)
+        }
+    }
+
+    private func isMostlyHiragana(_ text: String) -> Bool {
+        let scalars = text.unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0)
+                && !CharacterSet.punctuationCharacters.contains($0)
+        }
+        guard !scalars.isEmpty else { return false }
+        let hira = scalars.filter { (0x3040...0x309F).contains($0.value) }.count
+        return Double(hira) / Double(scalars.count) >= 0.7
+    }
+
+    private func reconstructJapanese(_ boxes: [TextBox]) -> String {
+        let cleaned = dropFurigana(explodeGlyphs(boxes))
+        guard !cleaned.isEmpty else { return "" }
+        if isHorizontalRun(cleaned) {
+            return reconstructHorizontal(cleaned, joiner: "")
+        }
+        return reconstructVerticalColumns(cleaned)
+    }
+
+    private func isHorizontalRun(_ boxes: [TextBox]) -> Bool {
+        let rect = bubbleRect(boxes)
+        let text = boxes.map(\.text).joined()
+        return rect.width > rect.height * 1.8 && rect.height < 0.08 && text.count >= 4
+    }
+
+    private func reconstructVerticalColumns(_ boxes: [TextBox]) -> String {
+        let widths = boxes.map(\.boundingBox.width).sorted()
+        let medianW = max(0.008, widths[widths.count / 2])
+        let columnWidth = max(medianW * 0.85, 0.012)
+        let sorted = boxes.sorted { a, b in
+            if abs(a.boundingBox.midX - b.boundingBox.midX) > columnWidth {
+                return a.boundingBox.midX > b.boundingBox.midX
+            }
+            return a.boundingBox.midY > b.boundingBox.midY
         }
         var columns: [[TextBox]] = []
         for box in sorted {
-            if let ref = columns.last?.first {
-                let threshold = max(0.02, max(ref.boundingBox.width, box.boundingBox.width) * 0.85)
-                if abs(box.boundingBox.midX - ref.boundingBox.midX) < threshold {
+            if let last = columns.last {
+                let refX = last.map(\.boundingBox.midX).reduce(0, +) / CGFloat(last.count)
+                if abs(box.boundingBox.midX - refX) < columnWidth {
                     columns[columns.count - 1].append(box)
                     continue
                 }
@@ -263,8 +354,8 @@ struct OCREngine {
             columns.append([box])
         }
         return columns.map { column in
-            column.sorted { $0.boundingBox.midY > $1.boundingBox.midY }.map(\.text).joined(separator: joiner)
-        }.joined(separator: joiner)
+            column.sorted { $0.boundingBox.midY > $1.boundingBox.midY }.map(\.text).joined()
+        }.joined()
     }
 
     private func reconstructHorizontal(_ boxes: [TextBox], joiner: String) -> String {
@@ -337,7 +428,8 @@ struct OCREngine {
         accurate: Bool,
         minHeight: Float,
         cropRect: CGRect,
-        fullSize: CGSize
+        fullSize: CGSize,
+        characterBoxes: Bool = false
     ) throws -> [TextBox] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = accurate ? .accurate : .fast
@@ -349,100 +441,43 @@ struct OCREngine {
         }
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
-        return (request.results ?? []).compactMap { observation in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
-            let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard text.count >= 1 else { return nil }
-            return TextBox(
-                text: text,
-                boundingBox: mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize),
-                confidence: candidate.confidence
-            )
-        }
-    }
-
-    /// Re-OCR only the 1–2 center bubbles that look vertical. Do not slice the whole page.
-    private func rereadVerticalBubbles(
-        in image: CGImage,
-        boxes: [TextBox],
-        languages: [String]
-    ) -> [TextBox] {
-        let usable = boxes.filter { !isMangaJunk($0) }
-        guard !usable.isEmpty else { return boxes }
-        let ranked = clusterBubbles(usable).sorted { a, b in
-            let ra = bubbleRect(a)
-            let rb = bubbleRect(b)
-            if abs(ra.midX - rb.midX) > 0.12 {
-                return ra.midX > rb.midX
+        return (request.results ?? []).flatMap { observation -> [TextBox] in
+            guard let candidate = observation.topCandidates(1).first else { return [] }
+            let raw = candidate.string
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 1 else { return [] }
+            if characterBoxes, raw.count > 1 {
+                let glyphs = glyphBoxes(from: candidate, cropRect: cropRect, fullSize: fullSize)
+                if !glyphs.isEmpty { return glyphs }
             }
-            return ra.midY > rb.midY
-        }
-        let targets = Array(ranked.prefix(1)).filter { cluster in
-            let rect = bubbleRect(cluster)
-            return rect.height > rect.width * 0.85 || rect.width < 0.18
-        }
-        guard !targets.isEmpty else { return boxes }
-
-        var replaced = boxes
-        let fullSize = CGSize(width: image.width, height: image.height)
-        for cluster in targets {
-            let norm = bubbleRect(cluster).insetBy(dx: -0.012, dy: -0.012)
-            let pixel = CGRect(
-                x: max(0, norm.minX) * fullSize.width,
-                y: max(0, 1 - min(1, norm.maxY)) * fullSize.height,
-                width: min(1, max(0, norm.width)) * fullSize.width,
-                height: min(1, max(0, norm.height)) * fullSize.height
-            ).integral
-            guard pixel.width >= 12, pixel.height >= 24,
-                  let slice = image.cropping(to: pixel),
-                  let rotated = rotateClockwise(slice)
-            else { continue }
-            let found = (try? recognizePass(
-                rotated,
-                languages: languages,
-                accurate: true,
-                minHeight: 0.012,
-                cropRect: CGRect(origin: .zero, size: CGSize(width: rotated.width, height: rotated.height)),
-                fullSize: CGSize(width: rotated.width, height: rotated.height)
-            )) ?? []
-            let better = found.filter { $0.confidence >= 0.35 && looksLikeJapanese($0.text) }
-            guard !better.isEmpty else { continue }
-            let joined = better
-                .sorted { $0.boundingBox.midX < $1.boundingBox.midX }
-                .map(\.text)
-                .joined()
-            guard !joined.isEmpty else { continue }
-            let clusterIDs = Set(cluster.map { "\($0.text)|\($0.boundingBox.origin.x)|\($0.boundingBox.origin.y)" })
-            replaced.removeAll { box in
-                clusterIDs.contains("\(box.text)|\(box.boundingBox.origin.x)|\(box.boundingBox.origin.y)")
-            }
-            replaced.append(
+            return [
                 TextBox(
-                    text: joined,
-                    boundingBox: bubbleRect(cluster),
-                    confidence: better.map(\.confidence).max() ?? 0.5
+                    text: text,
+                    boundingBox: mapBox(observation.boundingBox, cropRect: cropRect, fullSize: fullSize),
+                    confidence: candidate.confidence
                 )
-            )
+            ]
         }
-        return replaced
     }
 
-    private func rotateClockwise(_ image: CGImage) -> CGImage? {
-        let width = image.height
-        let height = image.width
-        guard let ctx = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        ctx.translateBy(x: CGFloat(width), y: 0)
-        ctx.rotate(by: .pi / 2)
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        return ctx.makeImage()
+    private func glyphBoxes(from candidate: VNRecognizedText, cropRect: CGRect, fullSize: CGSize) -> [TextBox] {
+        var boxes: [TextBox] = []
+        var index = candidate.string.startIndex
+        while index < candidate.string.endIndex {
+            let next = candidate.string.index(after: index)
+            let ch = String(candidate.string[index..<next]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !ch.isEmpty, let region = try? candidate.boundingBox(for: index..<next) {
+                boxes.append(
+                    TextBox(
+                        text: ch,
+                        boundingBox: mapBox(region.boundingBox, cropRect: cropRect, fullSize: fullSize),
+                        confidence: candidate.confidence
+                    )
+                )
+            }
+            index = next
+        }
+        return boxes
     }
 
     private func ocrLanguages(settings: AppSettings) -> [String] {
@@ -483,13 +518,13 @@ struct OCREngine {
         case .custom:
             return settings.customRegion.pixelRect(in: size)
         case .smart:
-            return smartBand(in: size, scene: settings.translateScene)
+            return smartBand(in: size, settings: settings)
         }
     }
 
-    private func smartBand(in size: CGSize, scene: TranslateScene) -> CGRect {
+    private func smartBand(in size: CGSize, settings: AppSettings) -> CGRect {
         let landscape = size.width > size.height
-        switch scene {
+        switch settings.translateScene {
         case .video:
             if landscape {
                 return OCRRegion(x: 0.08, y: 0.74, width: 0.84, height: 0.20).pixelRect(in: size)
@@ -501,6 +536,9 @@ struct OCREngine {
             }
             return OCRRegion(x: 0.06, y: 0.58, width: 0.88, height: 0.32).pixelRect(in: size)
         case .manga:
+            if settings.mangaLayout == .japanese {
+                return OCRRegion(x: 0.06, y: 0.32, width: 0.88, height: 0.36).pixelRect(in: size)
+            }
             return CGRect(origin: .zero, size: size)
         case .reading:
             return OCRRegion(x: 0.08, y: 0.18, width: 0.84, height: 0.64).pixelRect(in: size)

@@ -18,7 +18,7 @@ enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .smart: return "游戏/视频对准字幕带，漫画整页找中心气泡"
+        case .smart: return "游戏/视频对准字幕带，漫画对准画面中间一带"
         case .custom: return "只识别你圈出来的那一块"
         case .full: return "整帧送去 OCR，最全也最慢"
         }
@@ -81,7 +81,7 @@ enum TranslateScene: String, Codable, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .game: return "适合游戏对话和选项"
-        case .manga: return "按气泡拆开，优先屏幕中心那两句"
+        case .manga: return "按气泡拆开，日漫中间一带从右往左读"
         case .video: return "适合字幕，横屏底部 / 竖屏顶部"
         case .reading: return "复制文本就会翻译，不用开直播"
         }

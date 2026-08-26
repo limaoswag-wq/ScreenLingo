@@ -393,7 +393,10 @@ struct OpenAITranslator: Translator {
         let prompt = settings.openaiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? AppSettings.defaultPrompt
             : settings.openaiPrompt
-        let user = "目标语言：\(target)\n\n\(text)"
+        var user = "目标语言：\(target)\n\n\(text)"
+        if text.contains("【1】") {
+            user += "\n\n原文用【1】【2】标了不同气泡。译文保留这些标记，一段对一段，不要合成一段。"
+        }
         let maxTokens = min(max(settings.openaiMaxTokens, 64), 2048)
         switch settings.openaiAPIMode {
         case .chat:
