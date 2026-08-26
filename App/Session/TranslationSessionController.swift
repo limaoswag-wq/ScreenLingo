@@ -36,6 +36,7 @@ final class TranslationSessionController: ObservableObject {
     private var lastOCRDate: Date?
     private var pendingSource = ""
     private var pendingSince: Date?
+    private var translatedSource = ""
     private var lastFastTranslateAt: Date?
     private var lastAITranslateAt: Date?
     private var jobID: UInt64 = 0
@@ -118,6 +119,7 @@ final class TranslationSessionController: ObservableObject {
         lastOCRDate = nil
         pendingSource = ""
         pendingSince = nil
+        translatedSource = ""
         lastFastTranslateAt = nil
         lastAITranslateAt = nil
         pasteboardChangeCount = UIPasteboard.general.changeCount
@@ -357,23 +359,20 @@ final class TranslationSessionController: ObservableObject {
             await applyRecognized(source, force: true, kinds: settings.activeTranslators)
             return
         }
-        if similarSource(source, lastSource), lastFastTranslateAt != nil || lastAITranslateAt != nil {
+        lastSource = source
+        showRecognized(source)
+        if !translatedSource.isEmpty, similarSource(source, translatedSource) {
             statusLine = "原文几乎没变，沿用上次译文"
-            showRecognized(lastSource)
             return
         }
         if pendingSource.isEmpty || !similarSource(source, pendingSource) {
             pendingSource = source
             pendingSince = Date()
-            lastSource = source
-            showRecognized(source)
             statusLine = "已识别，停稳后翻译"
             return
         }
         pendingSource = source
-        guard let pendingSince, Date().timeIntervalSince(pendingSince) >= 0.5 else {
-            lastSource = source
-            showRecognized(source)
+        guard let pendingSince, Date().timeIntervalSince(pendingSince) >= 0.3 else {
             statusLine = "已识别，停稳后翻译"
             return
         }
@@ -406,8 +405,8 @@ final class TranslationSessionController: ObservableObject {
             return
         }
 
-        let fastReady = force || lastFastTranslateAt.map { Date().timeIntervalSince($0) >= 0.5 } ?? true
-        let aiReady = force || lastAITranslateAt.map { Date().timeIntervalSince($0) >= 1.2 } ?? (pendingSince.map { Date().timeIntervalSince($0) >= 1.2 } ?? false)
+        let fastReady = force || lastFastTranslateAt.map { Date().timeIntervalSince($0) >= 0.3 } ?? true
+        let aiReady = force || lastAITranslateAt.map { Date().timeIntervalSince($0) >= 0.9 } ?? (pendingSince.map { Date().timeIntervalSince($0) >= 0.9 } ?? false)
         var launch: [TranslatorKind] = []
         if fastReady {
             launch.append(contentsOf: engines.filter { $0 == .baidu || $0 == .tencent })
@@ -444,14 +443,15 @@ final class TranslationSessionController: ObservableObject {
                 }
             }
         }
+        translatedSource = source
         if launch.contains(.baidu) || launch.contains(.tencent) {
             lastFastTranslateAt = Date()
         }
         if launch.contains(.openai) {
             lastAITranslateAt = Date()
-            pendingSource = ""
-            pendingSince = nil
         }
+        pendingSource = ""
+        pendingSince = nil
         jobID += 1
         let currentJob = jobID
         isTranslating = true
