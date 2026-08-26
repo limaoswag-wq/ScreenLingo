@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 				<key>CFBundleShortVersionString</key>
-				<string>1.1.10</string>
+				<string>1.1.11</string>
 				<key>CFBundleVersion</key>
-				<string>22</string>
+				<string>23</string>
 	<key>MinimumOSVersion</key>
 	<string>16.0</string>
 	<key>UIRequiredDeviceCapabilities</key>

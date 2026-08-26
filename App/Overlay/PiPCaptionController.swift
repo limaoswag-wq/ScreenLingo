@@ -8,18 +8,16 @@ import QuartzCore
 final class PiPCaptionController: NSObject {
     let hostView = PiPHostUIView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
     private let displayLayer = AVSampleBufferDisplayLayer()
-    private let board = CaptionBoardView(frame: .zero)
     private var pip: AVPictureInPictureController?
     var fontSize: CaptionFontSize = .medium
     var windowSize: CaptionWindowSize = .medium {
         didSet {
             guard oldValue != windowSize else { return }
             canvasSize = windowSize.canvas
-            layoutBoard()
             render()
         }
     }
-    private var canvasSize = CGSize(width: 360, height: 140)
+    private var canvasSize = CGSize(width: 390, height: 96)
     private var lastSource = ""
     private var lastLines: [CaptionLine] = []
     private var emptyMessage: String?
@@ -35,20 +33,9 @@ final class PiPCaptionController: NSObject {
         hostView.onLayout = { [weak self] bounds in
             self?.displayLayer.frame = bounds
         }
-        board.isUserInteractionEnabled = false
-        board.alpha = 0.01
-        hostView.addSubview(board)
         canvasSize = windowSize.canvas
-        layoutBoard()
         setupPiP()
         render()
-    }
-
-    private func layoutBoard() {
-        board.bounds = CGRect(origin: .zero, size: canvasSize)
-        board.frame = CGRect(origin: .zero, size: canvasSize)
-        board.setNeedsLayout()
-        board.layoutIfNeeded()
     }
 
     private func setupPiP() {
@@ -82,7 +69,6 @@ final class PiPCaptionController: NSObject {
 
     func start() {
         canvasSize = windowSize.canvas
-        layoutBoard()
         if pip == nil {
             setupPiP()
         }
@@ -119,24 +105,92 @@ final class PiPCaptionController: NSObject {
     }
 
     private func render() {
-        board.apply(
-            source: lastSource,
-            lines: lastLines,
-            emptyMessage: emptyMessage,
-            fontSize: fontSize
-        )
-        layoutBoard()
-        guard let buffer = sampleBuffer(from: board) else { return }
+        let image = makeImage()
+        guard let buffer = sampleBuffer(from: image) else { return }
         if displayLayer.status == .failed {
             displayLayer.flush()
         }
         displayLayer.enqueue(buffer)
     }
 
-    private func sampleBuffer(from view: UIView) -> CMSampleBuffer? {
-        let scale: CGFloat = 2
-        let width = max(2, Int(view.bounds.width * scale))
-        let height = max(2, Int(view.bounds.height * scale))
+    private func makeImage() -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        format.scale = 2
+        return UIGraphicsImageRenderer(size: canvasSize, format: format).image { ctx in
+            let rect = CGRect(origin: .zero, size: canvasSize)
+            UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1).setFill()
+            ctx.fill(rect)
+
+            let inset = rect.insetBy(dx: 16, dy: 8)
+            var y = inset.minY
+            if !lastSource.isEmpty {
+                let sourceFont = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .regular)
+                let sourceHeight = min(inset.height * 0.38, height(of: lastSource, font: sourceFont, width: inset.width))
+                drawText(lastSource, font: sourceFont, color: .white, in: CGRect(x: inset.minX, y: y, width: inset.width, height: sourceHeight))
+                y += sourceHeight + 6
+                UIColor(white: 1, alpha: 0.18).setStroke()
+                let line = UIBezierPath()
+                line.move(to: CGPoint(x: inset.minX + 24, y: y))
+                line.addLine(to: CGPoint(x: inset.maxX - 24, y: y))
+                line.lineWidth = 1
+                line.stroke()
+                y += 6
+            }
+            if let emptyMessage, lastLines.isEmpty {
+                let font = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .medium)
+                let h = height(of: emptyMessage, font: font, width: inset.width)
+                drawText(emptyMessage, font: font, color: .systemOrange, in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
+            } else if lastLines.isEmpty && lastSource.isEmpty {
+                let text = "切换到其他 App 开始翻译"
+                let font = UIFont.systemFont(ofSize: fontSize.sourcePoints, weight: .medium)
+                let h = height(of: text, font: font, width: inset.width)
+                drawText(text, font: font, color: UIColor(white: 0.78, alpha: 1), in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
+            } else {
+                let transFont = UIFont.systemFont(ofSize: fontSize.translatedPoints, weight: .semibold)
+                for line in lastLines.prefix(3) {
+                    let text = line.displayText
+                    let color: UIColor = {
+                        if line.error != nil { return .systemOrange }
+                        if line.pending && line.text.isEmpty { return UIColor(white: 0.72, alpha: 1) }
+                        return HexColor.uiColor(from: line.hex)
+                    }()
+                    let remain = inset.maxY - y
+                    guard remain > 16 else { break }
+                    let h = min(remain, height(of: text, font: transFont, width: inset.width))
+                    drawText(text, font: transFont, color: color, in: CGRect(x: inset.minX, y: y, width: inset.width, height: h))
+                    y += h + 3
+                }
+            }
+        }
+    }
+
+    private func drawText(_ text: String, font: UIFont, color: UIColor, in rect: CGRect) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        let attr = NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: color,
+            .paragraphStyle: paragraph
+        ])
+        attr.draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+    }
+
+    private func height(of text: String, font: UIFont, width: CGFloat) -> CGFloat {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        let attr = NSAttributedString(string: text, attributes: [
+            .font: font,
+            .paragraphStyle: paragraph
+        ])
+        let bound = attr.boundingRect(with: CGSize(width: width, height: 120), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+        return max(18, ceil(bound.height))
+    }
+
+    private func sampleBuffer(from image: UIImage) -> CMSampleBuffer? {
+        guard let cgImage = image.cgImage else { return nil }
         var pixelBuffer: CVPixelBuffer?
         let attrs: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,
@@ -145,8 +199,8 @@ final class PiPCaptionController: NSObject {
         ]
         let status = CVPixelBufferCreate(
             kCFAllocatorDefault,
-            width,
-            height,
+            cgImage.width,
+            cgImage.height,
             kCVPixelFormatType_32ARGB,
             attrs as CFDictionary,
             &pixelBuffer
@@ -156,23 +210,17 @@ final class PiPCaptionController: NSObject {
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
         guard let context = CGContext(
             data: CVPixelBufferGetBaseAddress(pixelBuffer),
-            width: width,
-            height: height,
+            width: cgImage.width,
+            height: cgImage.height,
             bitsPerComponent: 8,
             bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
         ) else { return nil }
-        context.translateBy(x: 0, y: CGFloat(height))
-        context.scaleBy(x: scale, y: -scale)
-        view.layer.render(in: context)
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
 
         var format: CMVideoFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &format
-        )
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixelBuffer, formatDescriptionOut: &format)
         guard let format else { return nil }
         var timing = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: 30),
@@ -213,6 +261,7 @@ extension PiPCaptionController: AVPictureInPictureControllerDelegate {
         _ pictureInPictureController: AVPictureInPictureController
     ) {
         hideTransportChrome()
+        render()
     }
 }
 

@@ -146,22 +146,15 @@ final class TranslationSessionController: ObservableObject {
         cancelTranslations()
         hideOverlay()
         SilentAudio.shared.stop()
-        requestBroadcastStop()
         overlayHint = ""
         statusLine = "已停止"
         isTranslating = false
     }
 
-    func handleAppBackgrounded() {
-        // Switching to another app must keep the broadcast. Only stop if the
-        // user already tapped Stop, or the process is about to go away.
-        if stopRequested {
-            requestBroadcastStop()
-        }
-    }
+    func handleAppBackgrounded() {}
 
     func handleAppWillTerminate() {
-        requestBroadcastStop()
+        store.setBroadcasting(false)
         hideOverlay()
         SilentAudio.shared.stop()
     }
@@ -173,15 +166,8 @@ final class TranslationSessionController: ObservableObject {
 
     private func requestBroadcastStop() {
         store.setBroadcasting(false)
-        store.postDarwin(name: AppConstants.darwinStopBroadcast)
         isBroadcasting = false
         wasBroadcasting = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            AppGroupStore.shared.postDarwin(name: AppConstants.darwinStopBroadcast)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            AppGroupStore.shared.postDarwin(name: AppConstants.darwinStopBroadcast)
-        }
     }
 
     func previewPhoto(_ image: CGImage) async {
