@@ -12,6 +12,7 @@ enum AppConstants {
     static let frameFileName = "latest.jpg"
     static let frameMetaFileName = "latest.json"
     static let broadcastStateFileName = "broadcast.json"
+    static let hostHeartbeatFileName = "host-heartbeat"
 
     /// Broadcast extension send interval. OCR is more expensive than capture.
     static let captureMinInterval: TimeInterval = 0.45

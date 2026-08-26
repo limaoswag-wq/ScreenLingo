@@ -23,9 +23,12 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private var captureInterval: TimeInterval = AppConstants.captureMinInterval
     private let store = AppGroupStore.shared
     private var stopObserver: UnsafeRawPointer?
+    private var lastHostHeartbeat: TimeInterval = Date().timeIntervalSince1970
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         store.setBroadcasting(true)
+        store.touchHostHeartbeat()
+        lastHostHeartbeat = Date().timeIntervalSince1970
         listenForStop()
     }
 
@@ -58,23 +61,18 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
 
     @objc fileprivate func stopBroadcastFromApp() {
-        let selector = NSSelectorFromString("finishBroadcastWithError:")
-        if responds(to: selector) {
-            let error = NSError(
-                domain: "dev.screenlingo.broadcast",
-                code: 0,
-                userInfo: [NSLocalizedDescriptionKey: "stopped from app"]
-            )
-            perform(selector, with: error)
+        finishQuietly()
+    }
+
+    private func finishQuietly() {
+        store.setBroadcasting(false)
+        let graceful = NSSelectorFromString("finishBroadcastGracefully")
+        if responds(to: graceful) {
+            perform(graceful)
             return
         }
-        finishBroadcastWithError(
-            NSError(
-                domain: "dev.screenlingo.broadcast",
-                code: 0,
-                userInfo: [NSLocalizedDescriptionKey: "stopped from app"]
-            )
-        )
+        // Public fallback. Empty description avoids the iOS "stopped from app" banner.
+        finishBroadcastWithError(NSError(domain: RPRecordingErrorDomain, code: 0, userInfo: nil))
     }
 
     private func unlistenForStop() {
@@ -94,6 +92,13 @@ final class SampleHandler: RPBroadcastSampleHandler {
         if now - lastSettingsLoad > 1.5 {
             captureInterval = max(store.loadSettings().captureInterval, 0.35)
             lastSettingsLoad = now
+        }
+        if now - lastHostHeartbeat > 1.5 {
+            lastHostHeartbeat = now
+            if store.hostHeartbeatAge() > 8 {
+                finishQuietly()
+                return
+            }
         }
         guard now - lastSent >= captureInterval else { return }
         lastSent = now

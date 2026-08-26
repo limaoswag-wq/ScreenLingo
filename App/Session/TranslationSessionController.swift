@@ -121,6 +121,7 @@ final class TranslationSessionController: ObservableObject {
         pip.fontSize = settings.captionFontSize
         pip.windowSize = settings.captionWindowSize
         timer?.invalidate()
+        store.touchHostHeartbeat()
         let timer = Timer.scheduledTimer(withTimeInterval: 0.22, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.tick()
@@ -208,6 +209,9 @@ final class TranslationSessionController: ObservableObject {
         isBroadcasting = broadcasting
         pip.fontSize = settings.captionFontSize
         pip.windowSize = settings.captionWindowSize
+        if isRunning {
+            store.touchHostHeartbeat()
+        }
 
         if broadcasting && !wasBroadcasting {
             overlayVisible = false

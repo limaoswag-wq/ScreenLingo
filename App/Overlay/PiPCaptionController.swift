@@ -35,7 +35,9 @@ final class PiPCaptionController: NSObject {
         hostView.onLayout = { [weak self] bounds in
             self?.displayLayer.frame = bounds
         }
-        board.isHidden = true
+        board.isUserInteractionEnabled = false
+        board.alpha = 0.01
+        hostView.addSubview(board)
         canvasSize = windowSize.canvas
         layoutBoard()
         setupPiP()
@@ -45,6 +47,8 @@ final class PiPCaptionController: NSObject {
     private func layoutBoard() {
         board.bounds = CGRect(origin: .zero, size: canvasSize)
         board.frame = CGRect(origin: .zero, size: canvasSize)
+        board.setNeedsLayout()
+        board.layoutIfNeeded()
     }
 
     private func setupPiP() {
@@ -122,7 +126,6 @@ final class PiPCaptionController: NSObject {
             fontSize: fontSize
         )
         layoutBoard()
-        board.layoutIfNeeded()
         guard let buffer = sampleBuffer(from: board) else { return }
         if displayLayer.status == .failed {
             displayLayer.flush()

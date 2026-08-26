@@ -82,6 +82,20 @@ final class AppGroupStore {
         readJSON(BroadcastState.self, name: AppConstants.broadcastStateFileName)?.isBroadcasting ?? false
     }
 
+    func touchHostHeartbeat() {
+        guard let dir = containerURL else { return }
+        atomicWrite(Data("1".utf8), to: dir.appendingPathComponent(AppConstants.hostHeartbeatFileName))
+    }
+
+    func hostHeartbeatAge() -> TimeInterval {
+        guard let dir = containerURL else { return .greatestFiniteMagnitude }
+        let url = dir.appendingPathComponent(AppConstants.hostHeartbeatFileName)
+        guard let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else {
+            return .greatestFiniteMagnitude
+        }
+        return Date().timeIntervalSince(date)
+    }
+
     func writePixelBuffer(_ pixelBuffer: CVPixelBuffer, orientation: Int) {
         encoderQueue.async { [weak self] in
             self?.encodeAndWrite(pixelBuffer: pixelBuffer, orientation: orientation)
