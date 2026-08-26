@@ -98,7 +98,6 @@ final class TranslationSessionController: ObservableObject {
         SilentAudio.shared.start()
         pip.fontSize = settings.captionFontSize
         pip.windowSize = settings.captionWindowSize
-        pip.background = settings.overlayBackground
         timer?.invalidate()
         let timer = Timer.scheduledTimer(withTimeInterval: 0.22, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -147,7 +146,6 @@ final class TranslationSessionController: ObservableObject {
         isBroadcasting = broadcasting
         pip.fontSize = settings.captionFontSize
         pip.windowSize = settings.captionWindowSize
-        pip.background = settings.overlayBackground
 
         if broadcasting && !wasBroadcasting {
             showOverlayIfNeeded()

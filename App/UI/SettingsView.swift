@@ -57,30 +57,21 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
+            Section("UI") {
                 Toggle("只显示翻译结果", isOn: Binding(
                     get: { !session.settings.showSourceText },
                     set: { session.settings.showSourceText = !$0 }
                 ))
-                Picker("字体", selection: $session.settings.captionFontSize) {
+                Picker("字体大小", selection: $session.settings.captionFontSize) {
                     ForEach(CaptionFontSize.allCases) { size in
                         Text(size.title).tag(size)
                     }
                 }
-                Picker("宽度", selection: $session.settings.captionWindowSize) {
+                Picker("浮窗大小", selection: $session.settings.captionWindowSize) {
                     ForEach(CaptionWindowSize.allCases) { size in
                         Text(size.title).tag(size)
                     }
                 }
-                Picker("字幕底", selection: $session.settings.overlayBackground) {
-                    ForEach(OverlayBackground.allCases) { style in
-                        Text(style.title).tag(style)
-                    }
-                }
-            } header: {
-                Text("悬浮窗")
-            } footer: {
-                Text("高度会跟着原文和翻译行数收紧，不再留一大块空底。系统画中画窗口本身无法整窗透明。")
             }
 
             Section("说明") {
