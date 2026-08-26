@@ -6,6 +6,8 @@ enum AppTheme {
     static let spring = Animation.spring(response: 0.38, dampingFraction: 0.86)
     static let cardRadius: CGFloat = 24
     static let buttonRadius: CGFloat = 16
+    static let stroke = Color.white.opacity(0.42)
+    static let strokeDark = Color.white.opacity(0.16)
 
     static func palette(_ theme: AppColorTheme) -> ThemePalette {
         switch theme {
