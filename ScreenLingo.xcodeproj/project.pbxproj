@@ -16,7 +16,8 @@
 		420579C03A824A9498ED8D63 /* TranslationSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA802583DD74A7AB6E46688 /* TranslationSessionController.swift */; };
 		ADE40D238FDB4DA5B7C90CA1 /* OCREngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87663DAEC47443A08D9D8CE9 /* OCREngine.swift */; };
 		CA18C83B2EAB4EA080A0FDD2 /* Translator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F5FB81908A4EA2BA9679A9 /* Translator.swift */; };
-		1E6D6155B547467BA534DF36 /* PiPCaptionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */; };
+			1E6D6155B547467BA534DF36 /* PiPCaptionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */; };
+			A1C4E0B0D2F14C8E9A7B3C21 /* CaptionBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2D5F1C0E3A24D9F8C6B4A10 /* CaptionBoardView.swift */; };
 		2EC5E443D04749D5AF907775 /* SilentAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = D239AD735CED4ACF95AD9806 /* SilentAudio.swift */; };
 		F4A01EEDA0D74F32B0409591 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 190DD96E1B1F4DB3BC652B5F /* AppConstants.swift */; };
 		2F1E2824D7C04758A7C9B529 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22E02968A98B4F43B63D354E /* Models.swift */; };
@@ -92,7 +93,8 @@
 		3BA802583DD74A7AB6E46688 /* TranslationSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationSessionController.swift; sourceTree = "<group>"; };
 		87663DAEC47443A08D9D8CE9 /* OCREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCREngine.swift; sourceTree = "<group>"; };
 		A5F5FB81908A4EA2BA9679A9 /* Translator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Translator.swift; sourceTree = "<group>"; };
-		87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPCaptionController.swift; sourceTree = "<group>"; };
+			87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPCaptionController.swift; sourceTree = "<group>"; };
+			B2D5F1C0E3A24D9F8C6B4A10 /* CaptionBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionBoardView.swift; sourceTree = "<group>"; };
 		D239AD735CED4ACF95AD9806 /* SilentAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentAudio.swift; sourceTree = "<group>"; };
 		190DD96E1B1F4DB3BC652B5F /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConstants.swift; sourceTree = "<group>"; };
 		22E02968A98B4F43B63D354E /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -214,14 +216,15 @@
 			path = Translation;
 			sourceTree = "<group>";
 		};
-		2A7B2861E0FC415D999BD942 /* Overlay */ = {
-			isa = PBXGroup;
-			children = (
-				87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */,
-			);
-			path = Overlay;
-			sourceTree = "<group>";
-		};
+			2A7B2861E0FC415D999BD942 /* Overlay */ = {
+				isa = PBXGroup;
+				children = (
+					87FBAB5DA0EF4902A40880A5 /* PiPCaptionController.swift */,
+					B2D5F1C0E3A24D9F8C6B4A10 /* CaptionBoardView.swift */,
+				);
+				path = Overlay;
+				sourceTree = "<group>";
+			};
 		8110190C7D8B440EB7602CB9 /* Audio */ = {
 			isa = PBXGroup;
 			children = (
@@ -389,8 +392,9 @@
 				420579C03A824A9498ED8D63 /* TranslationSessionController.swift in Sources */,
 				ADE40D238FDB4DA5B7C90CA1 /* OCREngine.swift in Sources */,
 				CA18C83B2EAB4EA080A0FDD2 /* Translator.swift in Sources */,
-				1E6D6155B547467BA534DF36 /* PiPCaptionController.swift in Sources */,
-				2EC5E443D04749D5AF907775 /* SilentAudio.swift in Sources */,
+					1E6D6155B547467BA534DF36 /* PiPCaptionController.swift in Sources */,
+					A1C4E0B0D2F14C8E9A7B3C21 /* CaptionBoardView.swift in Sources */,
+					2EC5E443D04749D5AF907775 /* SilentAudio.swift in Sources */,
 				F4A01EEDA0D74F32B0409591 /* AppConstants.swift in Sources */,
 				2F1E2824D7C04758A7C9B529 /* Models.swift in Sources */,
 				170D9C7CC9A84832BC851700 /* AppSettings.swift in Sources */,
@@ -475,12 +479,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.1.8;
+				MARKETING_VERSION = 1.1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app;
 				PRODUCT_NAME = ScreenLingo;
 				SUPPORTS_MACCATALYST = NO;
@@ -499,12 +503,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.1.8;
+				MARKETING_VERSION = 1.1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app;
 				PRODUCT_NAME = ScreenLingo;
 				SUPPORTS_MACCATALYST = NO;
@@ -521,12 +525,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Broadcast/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.1.8;
+				MARKETING_VERSION = 1.1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app.broadcast;
 				PRODUCT_NAME = Broadcast;
 				SKIP_INSTALL = YES;
@@ -543,12 +547,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Broadcast/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.1.8;
+				MARKETING_VERSION = 1.1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.screenlingo.app.broadcast;
 				PRODUCT_NAME = Broadcast;
 				SKIP_INSTALL = YES;

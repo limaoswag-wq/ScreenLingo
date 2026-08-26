@@ -30,6 +30,7 @@ app_files = [
     ("OCREngine.swift", "App/OCR/OCREngine.swift"),
     ("Translator.swift", "App/Translation/Translator.swift"),
     ("PiPCaptionController.swift", "App/Overlay/PiPCaptionController.swift"),
+    ("CaptionBoardView.swift", "App/Overlay/CaptionBoardView.swift"),
     ("SilentAudio.swift", "App/Audio/SilentAudio.swift"),
 ]
 shared_files = [

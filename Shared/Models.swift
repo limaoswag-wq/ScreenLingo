@@ -210,19 +210,19 @@ enum CaptionFontSize: String, Codable, CaseIterable, Identifiable {
 
     var sourcePoints: CGFloat {
         switch self {
-        case .small: return 16
-        case .medium: return 20
-        case .large: return 24
-        case .extraLarge: return 28
+        case .small: return 13
+        case .medium: return 15
+        case .large: return 17
+        case .extraLarge: return 19
         }
     }
 
     var translatedPoints: CGFloat {
         switch self {
-        case .small: return 20
-        case .medium: return 24
-        case .large: return 30
-        case .extraLarge: return 36
+        case .small: return 16
+        case .medium: return 18
+        case .large: return 21
+        case .extraLarge: return 24
         }
     }
 }
@@ -278,9 +278,9 @@ enum CaptionWindowSize: String, Codable, CaseIterable, Identifiable {
 
     var canvas: CGSize {
         switch self {
-        case .small: return CGSize(width: 480, height: 168)
-        case .medium: return CGSize(width: 640, height: 220)
-        case .large: return CGSize(width: 900, height: 320)
+        case .small: return CGSize(width: 280, height: 96)
+        case .medium: return CGSize(width: 360, height: 140)
+        case .large: return CGSize(width: 420, height: 200)
         }
     }
 }

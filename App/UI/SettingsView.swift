@@ -72,6 +72,9 @@ struct SettingsView: View {
                         Text(size.title).tag(size)
                     }
                 }
+                Text("小 / 中 / 大会改变悬浮窗本身的宽高，不只是字号。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 .onChange(of: session.settings.captionWindowSize) { _ in
                     session.applyOverlayAppearance()
                 }
