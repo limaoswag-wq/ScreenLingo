@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum AppTheme {
     static let ease = Animation.timingCurve(0.16, 1.0, 0.30, 1.0, duration: 0.18)
@@ -262,4 +263,37 @@ struct StatusBadge: View {
         if running { return "等待直播" }
         return "未开始"
     }
+}
+
+enum HexColor {
+    static func uiColor(from hex: String) -> UIColor {
+        var h = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        if h.count == 6 { h += "FF" }
+        guard h.count == 8, let n = UInt64(h, radix: 16) else {
+            return UIColor.white
+        }
+        return UIColor(
+            red: CGFloat((n >> 24) & 0xFF) / 255,
+            green: CGFloat((n >> 16) & 0xFF) / 255,
+            blue: CGFloat((n >> 8) & 0xFF) / 255,
+            alpha: CGFloat(n & 0xFF) / 255
+        )
+    }
+
+    static func hex(from color: UIColor) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+    }
+
+    static let presets: [(name: String, hex: String)] = [
+        ("蓝", "#3B82F6"),
+        ("绿", "#22C55E"),
+        ("黄", "#EAB308"),
+        ("红", "#EF4444"),
+        ("青", "#14B8A6"),
+        ("橙", "#F97316"),
+        ("紫", "#A855F7"),
+        ("白", "#F8FAFC")
+    ]
 }

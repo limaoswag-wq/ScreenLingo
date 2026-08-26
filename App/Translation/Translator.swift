@@ -190,9 +190,9 @@ struct TencentTranslator: Translator {
         let canonicalHash = SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
         let credentialScope = "\(date)/tmt/tc3_request"
         let stringToSign = "TC3-HMAC-SHA256\n\(timestamp)\n\(credentialScope)\n\(canonicalHash)"
-        let secretDate = hmac("TC3" + secretKey, date)
-        let secretService = hmac(secretDate, "tmt")
-        let secretSigning = hmac(secretService, "tc3_request")
+        let secretDate = hmacString("TC3" + secretKey, date)
+        let secretService = hmacData(secretDate, "tmt")
+        let secretSigning = hmacData(secretService, "tc3_request")
         let signature = hmacHex(secretSigning, stringToSign)
         var request = URLRequest(url: URL(string: "https://tmt.tencentcloudapi.com")!)
         request.httpMethod = "POST"
@@ -239,17 +239,17 @@ struct TencentTranslator: Translator {
         return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
     }
 
-    private func hmac(_ key: String, _ message: String) -> Data {
-        hmac(Data(key.utf8), message)
+    private func hmacString(_ key: String, _ message: String) -> Data {
+        hmacData(Data(key.utf8), message)
     }
 
-    private func hmac(_ key: Data, _ message: String) -> Data {
+    private func hmacData(_ key: Data, _ message: String) -> Data {
         let mac = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: key))
         return Data(mac)
     }
 
     private func hmacHex(_ key: Data, _ message: String) -> String {
-        hmac(key, message).map { String(format: "%02x", $0) }.joined()
+        hmacData(key, message).map { String(format: "%02x", $0) }.joined()
     }
 }
 

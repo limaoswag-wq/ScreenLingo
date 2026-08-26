@@ -107,18 +107,18 @@ struct SettingsView: View {
                 }
             }
             Spacer()
-            ColorPicker(
-                "",
-                selection: Binding(
-                    get: { Color(hex: session.settings.colorHex(for: kind)) },
-                    set: { newColor in
-                        session.settings.setColor(HexColor.hex(fromSwiftUI: newColor), for: kind)
+            Menu {
+                ForEach(HexColor.presets, id: \.hex) { preset in
+                    Button(preset.name) {
+                        session.settings.setColor(preset.hex, for: kind)
                     }
-                ),
-                supportsOpacity: false
-            )
-            .labelsHidden()
-            .frame(width: 36, height: 28)
+                }
+            } label: {
+                Circle()
+                    .fill(Color(hex: session.settings.colorHex(for: kind)))
+                    .frame(width: 22, height: 22)
+                    .overlay(Circle().stroke(Color.primary.opacity(0.2), lineWidth: 1))
+            }
         }
     }
 

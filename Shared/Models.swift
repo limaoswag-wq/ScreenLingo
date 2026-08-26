@@ -1,7 +1,5 @@
 import Foundation
 import CoreGraphics
-import UIKit
-import SwiftUI
 
 enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
     case smart
@@ -328,46 +326,4 @@ struct FrameMeta: Codable {
 struct BroadcastState: Codable {
     var isBroadcasting: Bool
     var startedAt: TimeInterval?
-}
-
-enum HexColor {
-    static func uiColor(from hex: String) -> UIColor {
-        var h = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        if h.count == 6 { h += "FF" }
-        guard h.count == 8, let n = UInt64(h, radix: 16) else {
-            return UIColor.white
-        }
-        return UIColor(
-            red: CGFloat((n >> 24) & 0xFF) / 255,
-            green: CGFloat((n >> 16) & 0xFF) / 255,
-            blue: CGFloat((n >> 8) & 0xFF) / 255,
-            alpha: CGFloat(n & 0xFF) / 255
-        )
-    }
-
-    static func hex(from color: UIColor) -> String {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        color.getRed(&r, green: &g, blue: &b, alpha: &a)
-        return String(
-            format: "#%02X%02X%02X",
-            Int(r * 255), Int(g * 255), Int(b * 255)
-        )
-    }
-
-    static func hex(fromSwiftUI color: Color) -> String {
-        if #available(iOS 17.0, *) {
-            return hex(from: UIColor(color))
-        }
-        let host = UIHostingController(rootView: color)
-        host.view.bounds = CGRect(x: 0, y: 0, width: 2, height: 2)
-        host.view.backgroundColor = .clear
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
-        let image = renderer.image { _ in
-            host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
-        }
-        guard let cg = image.cgImage else { return "#FFFFFF" }
-        let pixel = cg.dataProvider?.data
-        guard let pointer = CFDataGetBytePtr(pixel) else { return "#FFFFFF" }
-        return String(format: "#%02X%02X%02X", pointer[0], pointer[1], pointer[2])
-    }
 }
