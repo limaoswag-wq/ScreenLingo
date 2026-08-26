@@ -89,6 +89,7 @@ enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
     case openai
     case google
     case deepl
+    case vps
     case apple
 
     var id: String { rawValue }
@@ -101,6 +102,7 @@ enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
         case .tencent: return "腾讯翻译"
         case .deepl: return "DeepL"
         case .openai: return "自定义 AI"
+        case .vps: return "VPS 本地包"
         }
     }
 
@@ -117,6 +119,7 @@ enum TranslatorKind: String, Codable, CaseIterable, Identifiable {
         case .openai: return "#EAB308"
         case .google: return "#EF4444"
         case .deepl: return "#14B8A6"
+        case .vps: return "#A855F7"
         case .apple: return "#9CA3AF"
         }
     }

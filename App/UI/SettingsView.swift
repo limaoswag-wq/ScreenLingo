@@ -77,7 +77,7 @@ struct SettingsView: View {
             }
 
             Section("说明") {
-                Text("直播扩展只负责抓屏。滑动时会丢掉未完成的识别和翻译。自定义 AI 使用流式输出。Apple 翻译需要 iOS 18。")
+                Text("直播扩展只负责抓屏。滑动时会丢掉未完成的识别和翻译。自定义 AI 使用流式输出。VPS 本地包无审查、比大模型快。Apple 翻译需要 iOS 18。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -155,6 +155,21 @@ struct SettingsView: View {
                 SecureField("DeepL API Key", text: $session.settings.deeplAPIKey)
                     .textContentType(.password)
                     .autocapitalization(.none)
+            }
+        }
+        if session.settings.isEnabled(.vps) {
+            Section("VPS 本地包") {
+                TextField("服务地址", text: $session.settings.vpsBaseURL)
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                SecureField("API Key", text: $session.settings.vpsAPIKey)
+                    .textContentType(.password)
+                    .autocapitalization(.none)
+                Text("走日本 VPS 上的 LibreTranslate，无内容审查。适合日/英/韩 → 中。默认地址 grok2api.vlimi.com/lt。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         if session.settings.isEnabled(.openai) {

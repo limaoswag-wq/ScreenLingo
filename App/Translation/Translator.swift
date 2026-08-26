@@ -51,6 +51,7 @@ enum TranslatorFactory {
         case .deepl: return DeepLTranslator()
         case .openai: return OpenAITranslator()
         case .tencent: return TencentTranslator()
+        case .vps: return VPSTranslator()
         }
     }
 }
@@ -284,6 +285,48 @@ struct TencentTranslator: Translator {
 
     private func hmacHex(_ key: Data, _ message: String) -> String {
         hmacData(key, message).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+struct VPSTranslator: Translator {
+    func translate(_ text: String, settings: AppSettings) async throws -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw TranslatorError.empty }
+        let key = settings.vpsAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        var base = settings.vpsBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while base.hasSuffix("/") { base.removeLast() }
+        guard !base.isEmpty, !key.isEmpty else { throw TranslatorError.notConfigured }
+        guard let url = URL(string: base + "/translate") else { throw TranslatorError.notConfigured }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 12
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: Any] = [
+            "q": trimmed,
+            "source": vpsCode(settings.sourceLanguage),
+            "target": vpsCode(settings.targetLanguage),
+            "format": "text",
+            "api_key": key
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try throwIfNeeded(response, data)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if let error = json?["error"] as? String, !error.isEmpty {
+            throw TranslatorError.http(400, error)
+        }
+        let translated = (json?["translatedText"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let translated, !translated.isEmpty else { throw TranslatorError.decode }
+        return translated
+    }
+
+    private func vpsCode(_ id: String) -> String {
+        switch id {
+        case "auto": return "auto"
+        case "zh-Hans", "zh-Hant": return "zh"
+        default: return id
+        }
     }
 }
 

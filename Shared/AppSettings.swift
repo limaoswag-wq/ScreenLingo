@@ -24,6 +24,8 @@ struct AppSettings: Codable, Equatable {
     var tencentSecretId: String = ""
     var tencentSecretKey: String = ""
     var deeplAPIKey: String = ""
+    var vpsBaseURL: String = "https://grok2api.vlimi.com/lt"
+    var vpsAPIKey: String = ""
     var openaiBaseURL: String = "https://api.openai.com/v1"
     var openaiAPIKey: String = ""
     var openaiModel: String = "gpt-4o-mini"
@@ -43,6 +45,7 @@ struct AppSettings: Codable, Equatable {
         case captionFontSize, captionWindowSize, appearanceStyle, colorTheme
         case googleAPIKey, baiduAppID, baiduSecret
         case tencentSecretId, tencentSecretKey, deeplAPIKey
+        case vpsBaseURL, vpsAPIKey
         case openaiBaseURL, openaiAPIKey, openaiModel, openaiAPIMode
         case openaiMaxTokens, openaiPrompt
     }
@@ -75,6 +78,8 @@ struct AppSettings: Codable, Equatable {
         tencentSecretId = try c.decodeIfPresent(String.self, forKey: .tencentSecretId) ?? ""
         tencentSecretKey = try c.decodeIfPresent(String.self, forKey: .tencentSecretKey) ?? ""
         deeplAPIKey = try c.decodeIfPresent(String.self, forKey: .deeplAPIKey) ?? ""
+        vpsBaseURL = try c.decodeIfPresent(String.self, forKey: .vpsBaseURL) ?? "https://grok2api.vlimi.com/lt"
+        vpsAPIKey = try c.decodeIfPresent(String.self, forKey: .vpsAPIKey) ?? ""
         openaiBaseURL = try c.decodeIfPresent(String.self, forKey: .openaiBaseURL) ?? "https://api.openai.com/v1"
         openaiAPIKey = try c.decodeIfPresent(String.self, forKey: .openaiAPIKey) ?? ""
         openaiModel = try c.decodeIfPresent(String.self, forKey: .openaiModel) ?? "gpt-4o-mini"
@@ -108,6 +113,8 @@ struct AppSettings: Codable, Equatable {
         try c.encode(tencentSecretId, forKey: .tencentSecretId)
         try c.encode(tencentSecretKey, forKey: .tencentSecretKey)
         try c.encode(deeplAPIKey, forKey: .deeplAPIKey)
+        try c.encode(vpsBaseURL, forKey: .vpsBaseURL)
+        try c.encode(vpsAPIKey, forKey: .vpsAPIKey)
         try c.encode(openaiBaseURL, forKey: .openaiBaseURL)
         try c.encode(openaiAPIKey, forKey: .openaiAPIKey)
         try c.encode(openaiModel, forKey: .openaiModel)
@@ -157,6 +164,9 @@ struct AppSettings: Codable, Equatable {
                 && !tencentSecretKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .deepl:
             return !deeplAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .vps:
+            return !vpsBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !vpsAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .openai:
             return !openaiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && !openaiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
