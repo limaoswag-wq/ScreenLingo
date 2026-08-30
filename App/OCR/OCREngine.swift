@@ -11,10 +11,10 @@ struct OCREngine {
         let cropRect = cropRect(in: CGSize(width: image.width, height: image.height), settings: settings)
         let fullSize = CGSize(width: image.width, height: image.height)
         let languages = ocrLanguages(settings: settings)
-        let useMLKit = settings.ocrEngine == .mlkit
+        let useMLKit = settings.ocrEngine == .mlkit && (settings.sourceLanguage == "ja" || settings.sourceLanguage == "ko")
         if useMLKit, let mlkit = MLKitOCR.recognize(
             image: cropped,
-            layout: settings.mangaLayout,
+            sourceLanguage: settings.sourceLanguage,
             cropRect: cropRect,
             fullSize: fullSize
         ), !mlkit.isEmpty {
@@ -97,7 +97,7 @@ struct OCREngine {
     /// Japanese layout follows the current crop (smart / custom / full), not smart-mode only.
     private func mangaFocusText(from boxes: [TextBox], settings: AppSettings) -> String {
         let layout = settings.mangaLayout
-        let usable = boxes.filter { !isMangaJunk($0) && looksLikeMangaScript($0.text, layout: layout) }
+        let usable = boxes.filter { !isMangaJunk($0) && looksLikeSourceScript($0.text, source: settings.sourceLanguage) }
         guard !usable.isEmpty else { return "" }
         if layout == .korean {
             let bubbles = clusterBubbles(usable, mergeColumns: true)
@@ -156,11 +156,13 @@ struct OCREngine {
         return false
     }
 
-    private func looksLikeMangaScript(_ text: String, layout: MangaLayout) -> Bool {
+    private func looksLikeSourceScript(_ text: String, source: String) -> Bool {
         if text.count <= 2 { return true }
-        switch layout {
-        case .japanese: return looksLikeJapanese(text)
-        case .korean: return looksLikeHangul(text)
+        switch source {
+        case "ja": return looksLikeJapanese(text)
+        case "ko": return looksLikeHangul(text)
+        case "zh-Hans", "zh-Hant": return looksLikeJapanese(text)
+        default: return true
         }
     }
 
@@ -473,10 +475,7 @@ struct OCREngine {
     }
 
     private func ocrLanguages(settings: AppSettings) -> [String] {
-        if settings.translateScene == .manga {
-            return settings.mangaLayout == .japanese ? ["ja-JP"] : ["ko-KR"]
-        }
-        return preferredLanguages(source: settings.sourceLanguage)
+        preferredLanguages(source: settings.sourceLanguage)
     }
 
     private func preferredLanguages(source: String) -> [String] {
@@ -493,7 +492,7 @@ struct OCREngine {
         case "vi": return ["vi-VN", "en-US"]
         case "th": return ["th-TH", "en-US"]
         default:
-            return ["ko-KR", "ja-JP", "en-US", "zh-Hans"]
+            return ["en-US", "zh-Hans", "ja-JP", "ko-KR"]
         }
     }
 

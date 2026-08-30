@@ -19,7 +19,7 @@ enum RecognitionMode: String, Codable, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .smart: return "游戏/视频对准字幕带，漫画对准中间一带再按竖列读"
-        case .custom: return "只识别你圈出来的那一块，日漫同样按竖列读"
+        case .custom: return "只识别你圈出来的那一块，竖版同样按列读"
         case .full: return "整帧送去 OCR，最全也最慢"
         }
     }
@@ -41,15 +41,15 @@ enum MangaLayout: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .japanese: return "日漫"
-        case .korean: return "韩漫"
+        case .japanese: return "竖版"
+        case .korean: return "横版"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .japanese: return "竖排气泡，右到左"
-        case .korean: return "横排气泡，左到右"
+        case .japanese: return "按列从右往左读，语言跟首页一致"
+        case .korean: return "按行从左往右读，语言跟首页一致"
         }
     }
 
@@ -81,7 +81,7 @@ enum TranslateScene: String, Codable, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .game: return "适合游戏对话和选项"
-        case .manga: return "日漫按竖列右到左读，自定义框同样生效"
+        case .manga: return "竖版/横版只改阅读顺序，识别语言跟首页一致"
         case .video: return "适合字幕，横屏底部 / 竖屏顶部"
         case .reading: return "复制文本就会翻译，不用开直播"
         }

@@ -62,6 +62,9 @@ struct HomeView: View {
             .sheet(isPresented: $showRegionEditor) {
                 RegionEditorView(region: $session.settings.customRegion)
             }
+            .onChange(of: session.settings.sourceLanguage) { _ in
+                applyOCRDefault(for: session.settings.translateScene, layout: session.settings.mangaLayout)
+            }
             .sheet(isPresented: $showSourcePicker) {
                 LanguagePickerSheet(
                     title: "识别语言",
@@ -302,9 +305,10 @@ struct HomeView: View {
     }
 
     private func applyOCRDefault(for scene: TranslateScene, layout: MangaLayout) {
-        if scene == .manga, layout == .japanese {
+        let source = session.settings.sourceLanguage
+        if scene == .manga, layout == .japanese, source == "ja" {
             session.settings.ocrEngine = .mlkit
-        } else if session.settings.ocrEngine == .mlkit {
+        } else if session.settings.ocrEngine == .mlkit, source != "ja", source != "ko" {
             session.settings.ocrEngine = .visionAccurate
         }
     }

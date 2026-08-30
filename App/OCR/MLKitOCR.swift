@@ -24,7 +24,7 @@ enum MLKitOCR {
 
     static func recognize(
         image: CGImage,
-        layout: MangaLayout,
+        sourceLanguage: String,
         cropRect: CGRect,
         fullSize: CGSize
     ) -> [TextBox]? {
@@ -33,25 +33,27 @@ enum MLKitOCR {
         let visionImage = VisionImage(image: uiImage)
         visionImage.orientation = .up
         let recognizer: TextRecognizer
-        switch layout {
-        case .japanese:
+        switch sourceLanguage {
+        case "ja":
             #if canImport(MLKitTextRecognitionJapanese)
             recognizer = TextRecognizer.textRecognizer(options: JapaneseTextRecognizerOptions())
             #else
             recognizer = TextRecognizer.textRecognizer()
             #endif
-        case .korean:
+        case "ko":
             #if canImport(MLKitTextRecognitionKorean)
             recognizer = TextRecognizer.textRecognizer(options: KoreanTextRecognizerOptions())
             #else
             recognizer = TextRecognizer.textRecognizer()
             #endif
+        default:
+            return nil
         }
         do {
             let result = try recognizer.results(in: visionImage)
             var boxes: [TextBox] = []
             for line in result.lines {
-                if layout == .japanese, !line.elements.isEmpty {
+                if sourceLanguage == "ja", !line.elements.isEmpty {
                     for element in line.elements {
                         let text = element.text.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !text.isEmpty else { continue }
